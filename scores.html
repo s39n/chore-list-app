@@ -195,32 +195,39 @@
     <div id="error-msg">Could not load. Will retry...</div>
 
     <script>
-        // --- Old-iPad Safari polyfills (must run before anything else) ---
-        // fetch (added iOS 10.3) — minimal XHR-based fallback.
-        if (!window.fetch) {
-            window.fetch = function (url, opts) {
-                opts = opts || {};
-                return new Promise(function (resolve, reject) {
-                    var xhr = new XMLHttpRequest();
-                    xhr.open(opts.method || "GET", url, true);
-                    if (opts.headers) {
-                        for (var h in opts.headers) {
-                            if (opts.headers.hasOwnProperty(h)) xhr.setRequestHeader(h, opts.headers[h]);
-                        }
+        // --- Old-iPad Safari support: pure XHR, no fetch/Promise needed ---
+        // Surface any JS error on screen instead of silently hanging on "Loading".
+        window.onerror = function (msg, src, line) {
+            var e = document.getElementById("error-msg");
+            if (e) { e.style.display = "block"; e.textContent = "JS error: " + msg + " (line " + line + ")"; }
+            return false;
+        };
+        function showError(text) {
+            var e = document.getElementById("error-msg");
+            if (e) { e.style.display = "block"; e.textContent = text; }
+        }
+        // Plain XHR (works on every iPad). onOk(parsedJsonOrNull) / onErr(status).
+        function xhrJson(method, url, headers, body, onOk, onErr) {
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open(method, url, true);
+                if (headers) {
+                    for (var h in headers) {
+                        if (headers.hasOwnProperty(h)) xhr.setRequestHeader(h, headers[h]);
                     }
-                    xhr.onload = function () {
-                        resolve({
-                            ok: xhr.status >= 200 && xhr.status < 300,
-                            status: xhr.status,
-                            statusText: xhr.statusText,
-                            json: function () { return Promise.resolve(JSON.parse(xhr.responseText)); },
-                            text: function () { return Promise.resolve(xhr.responseText); }
-                        });
-                    };
-                    xhr.onerror = function () { reject(new TypeError("Network request failed")); };
-                    xhr.send(opts.body || null);
-                });
-            };
+                }
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState !== 4) return;
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        var parsed = null;
+                        try { parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (e) { parsed = null; }
+                        onOk(parsed);
+                    } else {
+                        onErr(xhr.status);
+                    }
+                };
+                xhr.send(body || null);
+            } catch (e) { onErr(-1); }
         }
         // String.padStart (added iOS 10)
         if (!String.prototype.padStart) {
@@ -269,44 +276,19 @@
         }
 
         function markDone(id) {
-            // Dim the card immediately for feedback
             var btn = document.getElementById("btn-" + id);
             if (btn) { btn.textContent = "..."; btn.disabled = true; }
-
-            fetch(API_URL + "/tasks/" + id + "/status", {
-                method: "PATCH",
-                headers: {
-                    "Authorization": "Bearer " + API_TOKEN,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ status: "done" })
-            })
-            .then(function(r) {
-                if (r.ok) {
-                    loadScores();
-                } else {
-                    if (btn) { btn.textContent = "Done!"; btn.disabled = false; }
-                }
-            })
-            .catch(function() {
-                if (btn) { btn.textContent = "Done!"; btn.disabled = false; }
-            });
+            xhrJson("PATCH", API_URL + "/tasks/" + id + "/status",
+                { "Authorization": "Bearer " + API_TOKEN, "Content-Type": "application/json" },
+                JSON.stringify({ status: "done" }),
+                function () { loadScores(); },
+                function () { if (btn) { btn.textContent = "Done!"; btn.disabled = false; } }
+            );
         }
 
-        function loadScores() {
-            Promise.all([
-                fetch(API_URL + "/tasks", {
-                    headers: {
-                        "Authorization": "Bearer " + API_TOKEN,
-                        "Content-Type": "application/json"
-                    }
-                }).then(function(r) { return r.json(); }),
-                fetch("/store").then(function(r) { return r.json(); }).catch(function() { return STORE; })
-            ])
-            .then(function(results) {
-                var body = results[0];
-                STORE = results[1] || STORE;
-                var tasks = body.data || body;
+        // Renders the board from the tasks payload (and current STORE).
+        function render(body) {
+                var tasks = (body && body.data) ? body.data : (body || []);
                 var weekStart = getWeekStart();
                 var today = todayStr();
                 var todayStart = new Date();
@@ -405,13 +387,33 @@
                 var now = new Date();
                 document.getElementById("last-updated").textContent =
                     "Updated " + now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-            })
-            .catch(function(err) {
-                console.error(err);
-                document.getElementById("error-msg").style.display = "block";
-            });
         }
 
+        function loadScores() {
+            xhrJson("GET", API_URL + "/tasks",
+                { "Authorization": "Bearer " + API_TOKEN, "Content-Type": "application/json" },
+                null,
+                function (tasksBody) {
+                    // Points store is optional — render even if it fails.
+                    xhrJson("GET", "/store", null, null,
+                        function (storeObj) {
+                            if (storeObj) { STORE = storeObj; }
+                            document.getElementById("error-msg").style.display = "none";
+                            render(tasksBody);
+                        },
+                        function () {
+                            document.getElementById("error-msg").style.display = "none";
+                            render(tasksBody);
+                        }
+                    );
+                },
+                function (status) {
+                    showError("Could not load chores (HTTP " + status + "). Will retry…");
+                }
+            );
+        }
+
+        document.getElementById("last-updated").textContent = "Loading (v2)…";
         loadScores();
         setInterval(loadScores, 60 * 1000);
     </script>
