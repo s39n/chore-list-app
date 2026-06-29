@@ -4,3 +4,6 @@ npm-debug.log*
 
 # Runtime data — points, balances, approval history (machine-local state)
 data/
+
+# Local secrets / config (PIN, Oikos host). Commit .env.example instead.
+.env

@@ -1,0 +1,8 @@
+node_modules
+data
+.git
+*.test.js
+vitest.config.js
+.env
+npm-debug.log*
+.DS_Store

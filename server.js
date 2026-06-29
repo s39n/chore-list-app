@@ -6,16 +6,20 @@ import { defaultStore, approveWeek, redeemPoints } from "./points.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const OIKOS_HOST = "10.0.0.202";
-const OIKOS_PORT = 3008;
-const PORT = 3000;
+// All of these can be overridden via environment variables (e.g. in Docker).
+const OIKOS_HOST = process.env.OIKOS_HOST || "10.0.0.202";
+const OIKOS_PORT = Number(process.env.OIKOS_PORT) || 3008;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Parent PIN gates all write operations on the points store.
 // Override with: PARENT_PIN=xxxx npm start
 const PARENT_PIN = process.env.PARENT_PIN || "1234";
 
+// Where the points/balances JSON lives. In Docker, mount a volume here.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+
 // JSON file that persists points, balances, and approval history.
-const DATA_FILE = path.join(__dirname, "data", "store.json");
+const DATA_FILE = path.join(DATA_DIR, "store.json");
 
 const MIME = {
     ".html": "text/html",

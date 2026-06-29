@@ -1,0 +1,22 @@
+services:
+  chore-board:
+    # Dockhand builds this from the repo it pulls from GitHub.
+    build: .
+    image: chore-board:latest
+    container_name: chore-board
+    restart: unless-stopped
+
+    # Host port is a variable; container always listens on 3000 internally.
+    ports:
+      - "${CHORE_PORT:-3000}:3000"
+
+    # Storage location is a variable — point CHORE_DATA at a NAS share/dataset.
+    volumes:
+      - "${CHORE_DATA:-./data}:/data"
+
+    environment:
+      # Parent PIN for the approval page (change this!)
+      PARENT_PIN: "${PARENT_PIN:-1234}"
+      # Oikos backend the proxy forwards /api/* to
+      OIKOS_HOST: "${OIKOS_HOST:-10.0.0.202}"
+      OIKOS_PORT: "${OIKOS_PORT:-3008}"
