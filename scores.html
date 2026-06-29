@@ -195,6 +195,46 @@
     <div id="error-msg">Could not load. Will retry...</div>
 
     <script>
+        // --- Old-iPad Safari polyfills (must run before anything else) ---
+        // fetch (added iOS 10.3) — minimal XHR-based fallback.
+        if (!window.fetch) {
+            window.fetch = function (url, opts) {
+                opts = opts || {};
+                return new Promise(function (resolve, reject) {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open(opts.method || "GET", url, true);
+                    if (opts.headers) {
+                        for (var h in opts.headers) {
+                            if (opts.headers.hasOwnProperty(h)) xhr.setRequestHeader(h, opts.headers[h]);
+                        }
+                    }
+                    xhr.onload = function () {
+                        resolve({
+                            ok: xhr.status >= 200 && xhr.status < 300,
+                            status: xhr.status,
+                            statusText: xhr.statusText,
+                            json: function () { return Promise.resolve(JSON.parse(xhr.responseText)); },
+                            text: function () { return Promise.resolve(xhr.responseText); }
+                        });
+                    };
+                    xhr.onerror = function () { reject(new TypeError("Network request failed")); };
+                    xhr.send(opts.body || null);
+                });
+            };
+        }
+        // String.padStart (added iOS 10)
+        if (!String.prototype.padStart) {
+            String.prototype.padStart = function (targetLength, padString) {
+                targetLength = targetLength >> 0;
+                padString = String(typeof padString !== "undefined" ? padString : " ");
+                var str = String(this);
+                if (str.length >= targetLength || !padString.length) return str;
+                var pad = "";
+                while (pad.length < targetLength - str.length) pad += padString;
+                return pad.slice(0, targetLength - str.length) + str;
+            };
+        }
+
         var API_URL = "/api/v1";
         var API_TOKEN = "oikos_rUikei0NSSZt-S2zzI5KFPO6cMPADFN8UCYb_VawtJo";
 
