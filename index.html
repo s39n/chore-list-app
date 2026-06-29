@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chore List</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        #chore-board {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            max-width: 1200px;
+            overflow-x: auto;
+            padding-bottom: 20px;
+        }
+        .kid-column {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            min-width: 300px;
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .kid-column h2 {
+            text-align: center;
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .chore-card {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.1s;
+        }
+        .chore-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .chore-card span {
+            font-size: 1.1rem;
+            color: #444;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        p {
+            text-align: center;
+            color: #888;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div id="chore-board">
+        <!-- Chores will be rendered here -->
+        <p>Loading chores...</p>
+    </div>
+
+    <script type="module">
+        import { fetchActiveChores, completeChore } from './index.js';
+        
+        // Make completeChore available globally for the button onclick handlers
+        window.completeChore = completeChore;
+
+        // Initial fetch
+        fetchActiveChores();
+
+        // Optional: Refresh every 5 minutes
+        setInterval(fetchActiveChores, 5 * 60 * 1000);
+    </script>
+</body>
+</html>

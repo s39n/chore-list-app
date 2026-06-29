@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chore Scores</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+            background: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px;
+        }
+
+        h1 {
+            color: #fff;
+            font-size: 1.4rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+            text-align: center;
+        }
+
+        #last-updated {
+            color: #666;
+            font-size: 0.75rem;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        #scoreboard {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        .kid-card {
+            background: #16213e;
+            border-radius: 20px;
+            padding: 20px 18px;
+            flex: 1 1 260px;
+            max-width: 320px;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            border-top: 5px solid var(--color);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+
+        .kid-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 14px;
+        }
+
+        .kid-name {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--color);
+        }
+
+        .stats {
+            display: flex;
+            gap: 12px;
+        }
+
+        .stat {
+            text-align: right;
+        }
+
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 0.6rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Open task — big tap target */
+        .task-open {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            padding: 16px 14px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .task-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #fff;
+            flex: 1;
+            line-height: 1.2;
+        }
+
+        .done-btn {
+            background: var(--color);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        .done-btn:active {
+            opacity: 0.7;
+        }
+
+        /* Completed task — smaller, muted */
+        .task-done {
+            padding: 8px 4px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .task-done:last-child { border-bottom: none; }
+
+        .task-done-check {
+            color: var(--color);
+            font-size: 0.9rem;
+        }
+
+        .task-done-title {
+            font-size: 0.85rem;
+            color: #555;
+            text-decoration: line-through;
+        }
+
+        .all-done {
+            text-align: center;
+            color: var(--color);
+            font-size: 1.1rem;
+            font-weight: 600;
+            padding: 12px 0;
+        }
+
+        #error-msg {
+            color: #f66;
+            text-align: center;
+            margin-top: 40px;
+            font-size: 1rem;
+            display: none;
+        }
+
+        @media (orientation: landscape) {
+            #scoreboard { flex-direction: row; flex-wrap: nowrap; align-items: flex-start; }
+            .kid-card { max-width: none; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Chore Board</h1>
+    <div id="last-updated">Loading...</div>
+    <div id="scoreboard"></div>
+    <div id="error-msg">Could not load. Will retry...</div>
+
+    <script>
+        var API_URL = "/api/v1";
+        var API_TOKEN = "oikos_rUikei0NSSZt-S2zzI5KFPO6cMPADFN8UCYb_VawtJo";
+
+        var KIDS = [
+            { id: 2, name: "Evelyn", color: "#ff4444" },
+            { id: 3, name: "Amelia", color: "#dd44ff" },
+            { id: 5, name: "Eli",    color: "#4488ff" }
+        ];
+
+        function getWeekStart() {
+            var now = new Date();
+            var day = now.getDay();
+            var diff = day === 0 ? -6 : 1 - day;
+            var monday = new Date(now);
+            monday.setDate(now.getDate() + diff);
+            monday.setHours(0, 0, 0, 0);
+            return monday;
+        }
+
+        function todayStr() {
+            var d = new Date();
+            return d.getFullYear() + "-" +
+                String(d.getMonth() + 1).padStart(2, "0") + "-" +
+                String(d.getDate()).padStart(2, "0");
+        }
+
+        function markDone(id) {
+            // Dim the card immediately for feedback
+            var btn = document.getElementById("btn-" + id);
+            if (btn) { btn.textContent = "..."; btn.disabled = true; }
+
+            fetch(API_URL + "/tasks/" + id + "/status", {
+                method: "PATCH",
+                headers: {
+                    "Authorization": "Bearer " + API_TOKEN,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ status: "done" })
+            })
+            .then(function(r) {
+                if (r.ok) {
+                    loadScores();
+                } else {
+                    if (btn) { btn.textContent = "Done!"; btn.disabled = false; }
+                }
+            })
+            .catch(function() {
+                if (btn) { btn.textContent = "Done!"; btn.disabled = false; }
+            });
+        }
+
+        function loadScores() {
+            fetch(API_URL + "/tasks", {
+                headers: {
+                    "Authorization": "Bearer " + API_TOKEN,
+                    "Content-Type": "application/json"
+                }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(body) {
+                var tasks = body.data || body;
+                var weekStart = getWeekStart();
+                var today = todayStr();
+                document.getElementById("error-msg").style.display = "none";
+
+                var kidIds = KIDS.map(function(k) { return k.id; });
+                var kidTasks = tasks.filter(function(t) {
+                    return kidIds.indexOf(t.assigned_to) !== -1;
+                });
+
+                var board = document.getElementById("scoreboard");
+                board.innerHTML = "";
+
+                KIDS.forEach(function(kid) {
+                    var mine = kidTasks.filter(function(t) {
+                        return t.assigned_to === kid.id;
+                    });
+
+                    var weeklyDone = mine.filter(function(t) {
+                        if (t.status !== "done") return false;
+                        return new Date(t.updated_at) >= weekStart;
+                    });
+
+                    var todayDone = mine.filter(function(t) {
+                        if (t.status !== "done") return false;
+                        if (t.due_date) return t.due_date.startsWith(today);
+                        return t.is_recurring && t.updated_at && t.updated_at.startsWith(today);
+                    });
+
+                    var todayOpen = mine.filter(function(t) {
+                        if (t.status === "done" || t.status === "archived") return false;
+                        if (t.due_date) return t.due_date.startsWith(today);
+                        return t.is_recurring;
+                    });
+
+                    var card = document.createElement("div");
+                    card.className = "kid-card";
+                    card.style.setProperty("--color", kid.color);
+
+                    var openHtml = "";
+                    todayOpen.forEach(function(t) {
+                        openHtml +=
+                            '<div class="task-open">' +
+                                '<span class="task-title">' + t.title + '</span>' +
+                                '<button class="done-btn" id="btn-' + t.id + '" onclick="markDone(' + t.id + ')">Done!</button>' +
+                            '</div>';
+                    });
+
+                    var doneHtml = "";
+                    todayDone.forEach(function(t) {
+                        doneHtml +=
+                            '<div class="task-done">' +
+                                '<span class="task-done-check">✓</span>' +
+                                '<span class="task-done-title">' + t.title + '</span>' +
+                            '</div>';
+                    });
+
+                    var bodyHtml = openHtml || '<div class="all-done">All done! 🎉</div>';
+                    if (doneHtml) bodyHtml += doneHtml;
+
+                    card.innerHTML =
+                        '<div class="kid-header">' +
+                            '<div class="kid-name">' + kid.name + '</div>' +
+                            '<div class="stats">' +
+                                '<div class="stat">' +
+                                    '<div class="stat-value">' + todayDone.length + '</div>' +
+                                    '<div class="stat-label">today</div>' +
+                                '</div>' +
+                                '<div class="stat">' +
+                                    '<div class="stat-value">' + weeklyDone.length + '</div>' +
+                                    '<div class="stat-label">this week</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                        bodyHtml;
+
+                    board.appendChild(card);
+                });
+
+                var now = new Date();
+                document.getElementById("last-updated").textContent =
+                    "Updated " + now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            })
+            .catch(function(err) {
+                console.error(err);
+                document.getElementById("error-msg").style.display = "block";
+            });
+        }
+
+        loadScores();
+        setInterval(loadScores, 60 * 1000);
+    </script>
+</body>
+</html>
