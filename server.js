@@ -2,6 +2,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { defaultStore, approveWeek, redeemPoints } from "./points.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,17 +26,8 @@ const MIME = {
 
 // ---------------------------------------------------------------------------
 // Points store (flat JSON file, no external dependencies)
+// Core math lives in points.js so it can be unit-tested.
 // ---------------------------------------------------------------------------
-function defaultStore() {
-    return {
-        defaultPoints: 10,     // points for a chore with no custom value
-        pointValues: {},       // { "<chore title>": number }
-        balances: {},          // { "<kidId>": number }  redeemable banked points
-        approvals: [],         // { weekStart, kidId, points, approvedAt }
-        redemptions: [],       // { kidId, amount, note, at }
-    };
-}
-
 function loadStore() {
     try {
         const raw = fs.readFileSync(DATA_FILE, "utf8");
@@ -116,16 +108,7 @@ async function handleStore(req, res, urlPath) {
             return sendJson(res, 400, { error: "kidId, weekStart and numeric points required" });
         }
         const store = loadStore();
-        const prev = store.approvals.find(a => a.kidId === kidId && a.weekStart === weekStart);
-        if (prev) {
-            // Re-approval: adjust balance by the delta so totals stay correct.
-            store.balances[kidId] = (store.balances[kidId] || 0) + (points - prev.points);
-            prev.points = points;
-            prev.approvedAt = new Date().toISOString();
-        } else {
-            store.balances[kidId] = (store.balances[kidId] || 0) + points;
-            store.approvals.push({ kidId, weekStart, points, approvedAt: new Date().toISOString() });
-        }
+        approveWeek(store, kidId, weekStart, points);
         saveStore(store);
         return sendJson(res, 200, store);
     }
@@ -138,8 +121,7 @@ async function handleStore(req, res, urlPath) {
             return sendJson(res, 400, { error: "kidId and positive numeric amount required" });
         }
         const store = loadStore();
-        store.balances[kidId] = (store.balances[kidId] || 0) - amount;
-        store.redemptions.push({ kidId, amount, note: String(body.note || ""), at: new Date().toISOString() });
+        redeemPoints(store, kidId, amount, body.note);
         saveStore(store);
         return sendJson(res, 200, store);
     }

@@ -25,8 +25,8 @@ describe('Chore List tests', () => {
 
         it('should render chores correctly for specific kids', () => {
             const mockChores = [
-                { id: 101, title: 'Clean Room', assigneeId: 3 },
-                { id: 102, title: 'Wash Dishes', assigneeId: 4 }
+                { id: 101, title: 'Clean Room', assigned_to: 3 },
+                { id: 102, title: 'Wash Dishes', assigned_to: 5 }
             ];
 
             renderChores(mockChores);
@@ -45,14 +45,14 @@ describe('Chore List tests', () => {
             const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             
             const mockTasks = [
-                { id: 1, title: 'Today Task', assigneeId: 3, status: 'pending', dueDate: `${today}T10:00:00Z` },
-                { id: 2, title: 'Future Task', assigneeId: 3, status: 'pending', dueDate: '2099-01-01T10:00:00Z' },
-                { id: 3, title: 'Completed Task', assigneeId: 3, status: 'completed', dueDate: `${today}T10:00:00Z` },
-                { id: 4, title: 'Other Kid Task', assigneeId: 99, status: 'pending', dueDate: `${today}T10:00:00Z` }
+                { id: 1, title: 'Today Task', assigned_to: 3, status: 'pending', due_date: `${today}T10:00:00Z` },
+                { id: 2, title: 'Future Task', assigned_to: 3, status: 'pending', due_date: '2099-01-01T10:00:00Z' },
+                { id: 3, title: 'Completed Task', assigned_to: 3, status: 'done', due_date: `${today}T10:00:00Z` },
+                { id: 4, title: 'Other Kid Task', assigned_to: 99, status: 'pending', due_date: `${today}T10:00:00Z` }
             ];
 
             global.fetch.mockResolvedValueOnce({
-                json: async () => mockTasks
+                json: async () => ({ data: mockTasks })
             });
 
             await fetchActiveChores();
@@ -96,14 +96,14 @@ describe('Chore List tests', () => {
             global.fetch.mockResolvedValueOnce({
                 ok: true
             }).mockResolvedValueOnce({ // for the subsequent fetchActiveChores call
-                json: async () => []
+                json: async () => ({ data: [] })
             });
 
             await completeChore(choreId);
 
-            expect(global.fetch).toHaveBeenCalledWith(`${API_URL}/tasks/${choreId}`, expect.objectContaining({
+            expect(global.fetch).toHaveBeenCalledWith(`${API_URL}/tasks/${choreId}/status`, expect.objectContaining({
                 method: 'PATCH',
-                body: JSON.stringify({ status: 'completed' })
+                body: JSON.stringify({ status: 'done' })
             }));
 
             expect(document.getElementById(`chore-${choreId}`)).toBeNull();
