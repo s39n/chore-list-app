@@ -232,7 +232,8 @@
                 var title = decodeURIComponent(inp.getAttribute("data-title"));
                 if (inp.value !== "") values[title] = Number(inp.value);
             });
-            var def = Number(document.getElementById("default-points").value);
+            var defRaw = document.getElementById("default-points").value;
+            var def = defRaw === "" ? store.defaultPoints : Number(defRaw);
             fetch("/store/points", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json", "x-parent-pin": PIN },

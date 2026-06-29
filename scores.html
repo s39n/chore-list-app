@@ -269,6 +269,8 @@
                 var tasks = body.data || body;
                 var weekStart = getWeekStart();
                 var today = todayStr();
+                var todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
                 document.getElementById("error-msg").style.display = "none";
 
                 var kidIds = KIDS.map(function(k) { return k.id; });
@@ -294,11 +296,16 @@
                     }, 0);
                     var balance = (STORE.balances && STORE.balances[String(kid.id)]) || 0;
 
+                    // Done "today" = completed since local midnight (timezone-safe,
+                    // works for both dated and recurring chores).
                     var todayDone = mine.filter(function(t) {
                         if (t.status !== "done") return false;
-                        if (t.due_date) return t.due_date.startsWith(today);
-                        return t.is_recurring && t.updated_at && t.updated_at.startsWith(today);
+                        return t.updated_at && new Date(t.updated_at) >= todayStart;
                     });
+
+                    var todayPoints = todayDone.reduce(function(s, t) {
+                        return s + pointValue(t.title);
+                    }, 0);
 
                     var todayOpen = mine.filter(function(t) {
                         if (t.status === "done" || t.status === "archived") return false;
@@ -337,8 +344,8 @@
                             '<div class="kid-name">' + kid.name + '</div>' +
                             '<div class="stats">' +
                                 '<div class="stat">' +
-                                    '<div class="stat-value">' + todayDone.length + '</div>' +
-                                    '<div class="stat-label">today</div>' +
+                                    '<div class="stat-value">' + todayPoints + '</div>' +
+                                    '<div class="stat-label">pts today</div>' +
                                 '</div>' +
                                 '<div class="stat">' +
                                     '<div class="stat-value">' + weeklyPoints + '</div>' +
