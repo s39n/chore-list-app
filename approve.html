@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parent Approval</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+            background: #f4f5f7; color: #1a1a2e; padding: 20px; max-width: 760px; margin: 0 auto;
+        }
+        h1 { font-size: 1.4rem; margin-bottom: 4px; }
+        h2 { font-size: 1.05rem; margin: 24px 0 10px; color: #333; }
+        .sub { color: #777; font-size: 0.85rem; margin-bottom: 8px; }
+        .card { background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .kid-name { font-size: 1.2rem; font-weight: 800; }
+        .muted { color: #888; font-size: 0.85rem; }
+        input[type=number] { width: 90px; padding: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; text-align: right; }
+        input[type=text]   { padding: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 0.95rem; flex: 1; }
+        button { background: #2d6cdf; color: #fff; border: none; border-radius: 8px; padding: 10px 16px; font-size: 0.95rem; font-weight: 700; cursor: pointer; }
+        button.secondary { background: #6b7280; }
+        button:disabled { opacity: 0.5; cursor: default; }
+        .pv-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+        .pv-row span { flex: 1; }
+        .approved { color: #1a8f3c; font-weight: 700; font-size: 0.85rem; }
+        .balance { font-size: 1.3rem; font-weight: 800; color: #2d6cdf; }
+        #gate { text-align: center; padding-top: 60px; }
+        #gate input { text-align: center; letter-spacing: 6px; font-size: 1.5rem; width: 160px; }
+        .err { color: #c0392b; font-size: 0.85rem; margin-top: 6px; }
+        .redeem-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div id="gate" class="card" style="max-width:280px;margin:60px auto;">
+        <h1>Parent PIN</h1>
+        <p class="sub">Enter PIN to manage points</p>
+        <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+        <div style="margin-top:12px;"><button onclick="unlock()">Unlock</button></div>
+        <div id="gate-err" class="err"></div>
+    </div>
+
+    <div id="app" style="display:none;">
+        <h1>Parent Approval</h1>
+        <div class="sub" id="week-label"></div>
+
+        <h2>Approve this week</h2>
+        <div class="sub">Review each kid's earned points, adjust if needed, then approve to bank them.</div>
+        <div id="approvals"></div>
+
+        <h2>Banked balances</h2>
+        <div id="balances"></div>
+
+        <h2>Point values</h2>
+        <div class="sub">Set what each chore is worth. Blank uses the default.</div>
+        <div class="card">
+            <div class="pv-row"><span><strong>Default (any unlisted chore)</strong></span>
+                <input id="default-points" type="number" min="0"></div>
+            <div id="pv-list"></div>
+            <div style="margin-top:12px;"><button onclick="savePoints()">Save point values</button>
+                <span id="pv-saved" class="approved" style="display:none;">Saved ✓</span></div>
+        </div>
+    </div>
+
+    <script>
+        var API_URL = "/api/v1";
+        var API_TOKEN = "oikos_rUikei0NSSZt-S2zzI5KFPO6cMPADFN8UCYb_VawtJo";
+        var KIDS = [
+            { id: 2, name: "Evelyn" },
+            { id: 3, name: "Amelia" },
+            { id: 5, name: "Eli" }
+        ];
+
+        var PIN = "";
+        var store = null;
+        var tasks = [];
+
+        function getWeekStart() {
+            var now = new Date();
+            var day = now.getDay();
+            var diff = day === 0 ? -6 : 1 - day;
+            var monday = new Date(now);
+            monday.setDate(now.getDate() + diff);
+            monday.setHours(0, 0, 0, 0);
+            return monday;
+        }
+        function ymd(d) {
+            return d.getFullYear() + "-" +
+                String(d.getMonth() + 1).padStart(2, "0") + "-" +
+                String(d.getDate()).padStart(2, "0");
+        }
+        function pointValue(title) {
+            if (store.pointValues && store.pointValues.hasOwnProperty(title)) return store.pointValues[title];
+            return store.defaultPoints;
+        }
+
+        function unlock() {
+            PIN = document.getElementById("pin").value;
+            if (!PIN) { document.getElementById("gate-err").textContent = "Enter a PIN"; return; }
+            // Verify by attempting a harmless authorized write (re-save current points config).
+            loadAll().then(function () {
+                return fetch("/store/points", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
+                    body: JSON.stringify({ defaultPoints: store.defaultPoints, pointValues: store.pointValues })
+                });
+            }).then(function (r) {
+                if (r.status === 401) { document.getElementById("gate-err").textContent = "Wrong PIN"; return; }
+                document.getElementById("gate").style.display = "none";
+                document.getElementById("app").style.display = "block";
+                render();
+            }).catch(function () {
+                document.getElementById("gate-err").textContent = "Could not reach server";
+            });
+        }
+
+        function loadAll() {
+            return Promise.all([
+                fetch("/store").then(function (r) { return r.json(); }),
+                fetch(API_URL + "/tasks", { headers: { "Authorization": "Bearer " + API_TOKEN } })
+                    .then(function (r) { return r.json(); })
+            ]).then(function (res) {
+                store = res[0];
+                tasks = (res[1] && res[1].data) ? res[1].data : (res[1] || []);
+            });
+        }
+
+        function kidWeeklyDone(kidId, weekStart) {
+            return tasks.filter(function (t) {
+                return t.assigned_to === kidId && t.status === "done" &&
+                    t.updated_at && new Date(t.updated_at) >= weekStart;
+            });
+        }
+
+        function render() {
+            var weekStart = getWeekStart();
+            var wkKey = ymd(weekStart);
+            document.getElementById("week-label").textContent = "Week starting Monday " + wkKey;
+
+            // --- Approvals ---
+            var ap = document.getElementById("approvals");
+            ap.innerHTML = "";
+            KIDS.forEach(function (kid) {
+                var done = kidWeeklyDone(kid.id, weekStart);
+                var earned = done.reduce(function (sum, t) { return sum + pointValue(t.title); }, 0);
+                var prior = (store.approvals || []).find(function (a) {
+                    return a.kidId === String(kid.id) && a.weekStart === wkKey;
+                });
+
+                var card = document.createElement("div");
+                card.className = "card";
+                card.innerHTML =
+                    '<div class="row">' +
+                        '<div><div class="kid-name">' + kid.name + '</div>' +
+                            '<div class="muted">' + done.length + ' chores done &middot; ' + earned + ' pts earned</div>' +
+                            (prior ? '<div class="approved">Approved: ' + prior.points + ' pts</div>' : '') +
+                        '</div>' +
+                        '<div class="row" style="gap:8px;">' +
+                            '<input type="number" id="appr-' + kid.id + '" value="' + (prior ? prior.points : earned) + '">' +
+                            '<button onclick="approve(' + kid.id + ',\'' + wkKey + '\')">' +
+                                (prior ? 'Update' : 'Approve') + '</button>' +
+                        '</div>' +
+                    '</div>';
+                ap.appendChild(card);
+            });
+
+            // --- Balances ---
+            var bal = document.getElementById("balances");
+            bal.innerHTML = "";
+            KIDS.forEach(function (kid) {
+                var b = (store.balances && store.balances[String(kid.id)]) || 0;
+                var card = document.createElement("div");
+                card.className = "card";
+                card.innerHTML =
+                    '<div class="row">' +
+                        '<div class="kid-name">' + kid.name + '</div>' +
+                        '<div class="balance">' + b + ' pts</div>' +
+                    '</div>' +
+                    '<div class="redeem-row">' +
+                        '<input type="number" id="rdm-amt-' + kid.id + '" placeholder="amount" min="1">' +
+                        '<input type="text" id="rdm-note-' + kid.id + '" placeholder="reward (e.g. screen time)">' +
+                        '<button class="secondary" onclick="redeem(' + kid.id + ')">Redeem</button>' +
+                    '</div>';
+                bal.appendChild(card);
+            });
+
+            // --- Point values ---
+            document.getElementById("default-points").value = store.defaultPoints;
+            var titles = {};
+            tasks.forEach(function (t) {
+                if (KIDS.some(function (k) { return k.id === t.assigned_to; })) titles[t.title] = true;
+            });
+            Object.keys(store.pointValues || {}).forEach(function (tt) { titles[tt] = true; });
+            var list = document.getElementById("pv-list");
+            list.innerHTML = "";
+            Object.keys(titles).sort().forEach(function (title) {
+                var row = document.createElement("div");
+                row.className = "pv-row";
+                var current = (store.pointValues && store.pointValues.hasOwnProperty(title)) ? store.pointValues[title] : "";
+                row.innerHTML = '<span>' + title + '</span>' +
+                    '<input type="number" min="0" data-title="' + encodeURIComponent(title) + '" value="' + current + '" placeholder="' + store.defaultPoints + '">';
+                list.appendChild(row);
+            });
+        }
+
+        function approve(kidId, wkKey) {
+            var pts = Number(document.getElementById("appr-" + kidId).value);
+            fetch("/store/approve", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
+                body: JSON.stringify({ kidId: kidId, weekStart: wkKey, points: pts })
+            }).then(function (r) { return r.json(); })
+              .then(function (s) { store = s; render(); });
+        }
+
+        function redeem(kidId) {
+            var amt = Number(document.getElementById("rdm-amt-" + kidId).value);
+            var note = document.getElementById("rdm-note-" + kidId).value;
+            if (!amt || amt <= 0) return;
+            fetch("/store/redeem", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
+                body: JSON.stringify({ kidId: kidId, amount: amt, note: note })
+            }).then(function (r) { return r.json(); })
+              .then(function (s) { store = s; render(); });
+        }
+
+        function savePoints() {
+            var values = {};
+            document.querySelectorAll("#pv-list input[data-title]").forEach(function (inp) {
+                var title = decodeURIComponent(inp.getAttribute("data-title"));
+                if (inp.value !== "") values[title] = Number(inp.value);
+            });
+            var def = Number(document.getElementById("default-points").value);
+            fetch("/store/points", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
+                body: JSON.stringify({ defaultPoints: def, pointValues: values })
+            }).then(function (r) { return r.json(); })
+              .then(function (s) {
+                  store = s;
+                  var tag = document.getElementById("pv-saved");
+                  tag.style.display = "inline";
+                  setTimeout(function () { tag.style.display = "none"; }, 1500);
+                  render();
+              });
+        }
+    </script>
+</body>
+</html>

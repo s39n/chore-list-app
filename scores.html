@@ -112,6 +112,18 @@
             line-height: 1.2;
         }
 
+        .pts-badge {
+            display: inline-block;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--color);
+            background: rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 2px 7px;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+
         .done-btn {
             background: var(--color);
             color: #fff;
@@ -192,6 +204,13 @@
             { id: 5, name: "Eli",    color: "#4488ff" }
         ];
 
+        // Points store (point values + banked balances), refreshed each cycle.
+        var STORE = { defaultPoints: 10, pointValues: {}, balances: {} };
+        function pointValue(title) {
+            if (STORE.pointValues && STORE.pointValues.hasOwnProperty(title)) return STORE.pointValues[title];
+            return STORE.defaultPoints;
+        }
+
         function getWeekStart() {
             var now = new Date();
             var day = now.getDay();
@@ -235,14 +254,18 @@
         }
 
         function loadScores() {
-            fetch(API_URL + "/tasks", {
-                headers: {
-                    "Authorization": "Bearer " + API_TOKEN,
-                    "Content-Type": "application/json"
-                }
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(body) {
+            Promise.all([
+                fetch(API_URL + "/tasks", {
+                    headers: {
+                        "Authorization": "Bearer " + API_TOKEN,
+                        "Content-Type": "application/json"
+                    }
+                }).then(function(r) { return r.json(); }),
+                fetch("/store").then(function(r) { return r.json(); }).catch(function() { return STORE; })
+            ])
+            .then(function(results) {
+                var body = results[0];
+                STORE = results[1] || STORE;
                 var tasks = body.data || body;
                 var weekStart = getWeekStart();
                 var today = todayStr();
@@ -266,6 +289,11 @@
                         return new Date(t.updated_at) >= weekStart;
                     });
 
+                    var weeklyPoints = weeklyDone.reduce(function(s, t) {
+                        return s + pointValue(t.title);
+                    }, 0);
+                    var balance = (STORE.balances && STORE.balances[String(kid.id)]) || 0;
+
                     var todayDone = mine.filter(function(t) {
                         if (t.status !== "done") return false;
                         if (t.due_date) return t.due_date.startsWith(today);
@@ -286,7 +314,8 @@
                     todayOpen.forEach(function(t) {
                         openHtml +=
                             '<div class="task-open">' +
-                                '<span class="task-title">' + t.title + '</span>' +
+                                '<span class="task-title">' + t.title +
+                                    ' <span class="pts-badge">+' + pointValue(t.title) + '</span></span>' +
                                 '<button class="done-btn" id="btn-' + t.id + '" onclick="markDone(' + t.id + ')">Done!</button>' +
                             '</div>';
                     });
@@ -312,8 +341,12 @@
                                     '<div class="stat-label">today</div>' +
                                 '</div>' +
                                 '<div class="stat">' +
-                                    '<div class="stat-value">' + weeklyDone.length + '</div>' +
-                                    '<div class="stat-label">this week</div>' +
+                                    '<div class="stat-value">' + weeklyPoints + '</div>' +
+                                    '<div class="stat-label">pts week</div>' +
+                                '</div>' +
+                                '<div class="stat">' +
+                                    '<div class="stat-value">' + balance + '</div>' +
+                                    '<div class="stat-label">bank</div>' +
                                 '</div>' +
                             '</div>' +
                         '</div>' +
