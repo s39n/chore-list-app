@@ -43,7 +43,10 @@
 
     <div id="app" style="display:none;">
         <h1>Parent Approval</h1>
-        <div class="sub" id="week-label"></div>
+        <div class="row" style="justify-content:flex-start;gap:12px;">
+            <div class="sub" id="week-label"></div>
+            <button class="secondary" onclick="refreshData()" style="padding:4px 10px;font-size:0.8rem;">Refresh</button>
+        </div>
 
         <h2>Approve this week</h2>
         <div class="sub">Review each kid's earned points, adjust if needed, then approve to bank them.</div>
@@ -104,6 +107,7 @@
                 document.getElementById("gate").style.display = "none";
                 document.getElementById("app").style.display = "block";
                 render();
+                startAutoRefresh();
             }).catch(function () {
                 document.getElementById("gate-err").textContent = "Could not reach server";
             });
@@ -117,6 +121,20 @@
                 store = res[0];
                 CONFIG = res[1] || { chores: [], defaultPoints: 10 };
             });
+        }
+
+        // Re-pull store + config and re-render (used by the Refresh button and
+        // whenever the parent switches back to this tab).
+        function refreshData() {
+            if (!PIN) return;
+            loadAll().then(function () { render(); });
+        }
+        var _autoRefreshOn = false;
+        function startAutoRefresh() {
+            if (_autoRefreshOn) return;
+            _autoRefreshOn = true;
+            window.addEventListener("focus", refreshData);
+            document.addEventListener("visibilitychange", function () { if (!document.hidden) refreshData(); });
         }
 
         // A kid's logged completions this week → { count, points }. Same source
