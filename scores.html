@@ -333,4 +333,120 @@
                 var board = document.getElementById("scoreboard");
                 board.innerHTML = "";
 
-                KIDS.forEa
+                KIDS.forEach(function(kid) {
+                    var mine = kidTasks.filter(function(t) {
+                        return t.assigned_to === kid.id;
+                    });
+
+                    var weeklyDone = mine.filter(function(t) {
+                        if (t.status !== "done") return false;
+                        return new Date(t.updated_at) >= weekStart;
+                    });
+
+                    var weeklyPoints = weeklyDone.reduce(function(s, t) {
+                        return s + pointValue(t.title);
+                    }, 0);
+                    var balance = (STORE.balances && STORE.balances[String(kid.id)]) || 0;
+
+                    // Done "today" = completed since local midnight (timezone-safe,
+                    // works for both dated and recurring chores).
+                    var todayDone = mine.filter(function(t) {
+                        if (t.status !== "done") return false;
+                        return t.updated_at && new Date(t.updated_at) >= todayStart;
+                    });
+
+                    var todayPoints = todayDone.reduce(function(s, t) {
+                        return s + pointValue(t.title);
+                    }, 0);
+
+                    var todayOpen = mine.filter(function(t) {
+                        if (t.status === "done" || t.status === "archived") return false;
+                        if (t.due_date) return t.due_date.startsWith(today);
+                        return t.is_recurring;
+                    });
+
+                    var card = document.createElement("div");
+                    card.className = "kid-card";
+                    card.style.setProperty("--color", kid.color);
+
+                    var openHtml = "";
+                    todayOpen.forEach(function(t) {
+                        openHtml +=
+                            '<div class="task-open">' +
+                                '<span class="task-title">' + t.title +
+                                    ' <span class="pts-badge">+' + pointValue(t.title) + '</span></span>' +
+                                '<button class="done-btn" id="btn-' + t.id + '" onclick="markDone(' + t.id + ')">Done!</button>' +
+                            '</div>';
+                    });
+
+                    var doneHtml = "";
+                    todayDone.forEach(function(t) {
+                        doneHtml +=
+                            '<div class="task-done">' +
+                                '<span class="task-done-check">✓</span>' +
+                                '<span class="task-done-title">' + t.title + '</span>' +
+                                '<button class="undo-btn" id="undo-' + t.id + '" onclick="markUndone(' + t.id + ')">Undo</button>' +
+                            '</div>';
+                    });
+
+                    var bodyHtml = openHtml || '<div class="all-done">All done! 🎉</div>';
+                    if (doneHtml) bodyHtml += doneHtml;
+
+                    card.innerHTML =
+                        '<div class="kid-header">' +
+                            '<div class="kid-name">' + kid.name + '</div>' +
+                            '<div class="stats">' +
+                                '<div class="stat">' +
+                                    '<div class="stat-value">' + todayPoints + '</div>' +
+                                    '<div class="stat-label">pts today</div>' +
+                                '</div>' +
+                                '<div class="stat">' +
+                                    '<div class="stat-value">' + weeklyPoints + '</div>' +
+                                    '<div class="stat-label">pts week</div>' +
+                                '</div>' +
+                                '<div class="stat">' +
+                                    '<div class="stat-value">' + balance + '</div>' +
+                                    '<div class="stat-label">bank</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                        bodyHtml;
+
+                    board.appendChild(card);
+                });
+
+                var now = new Date();
+                document.getElementById("last-updated").textContent =
+                    "Updated " + now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        }
+
+        function loadScores() {
+            xhrJson("GET", API_URL + "/tasks",
+                { "Authorization": "Bearer " + API_TOKEN, "Content-Type": "application/json" },
+                null,
+                function (tasksBody) {
+                    // Points store is optional — render even if it fails.
+                    xhrJson("GET", "/store", null, null,
+                        function (storeObj) {
+                            if (storeObj) { STORE = storeObj; }
+                            document.getElementById("error-msg").style.display = "none";
+                            render(tasksBody);
+                        },
+                        function () {
+                            document.getElementById("error-msg").style.display = "none";
+                            render(tasksBody);
+                        }
+                    );
+                },
+                function (status) {
+                    showError("Could not load chores (HTTP " + status + "). Will retry…");
+                }
+            );
+        }
+
+        document.getElementById("last-updated").textContent = "Loading (v2)…";
+        loadScores();
+        setInterval(loadScores, 60 * 1000);
+    </script>
+</body>
+</html>
