@@ -285,7 +285,7 @@
         }
         .cal-event {
             display: flex;
-            gap: 12px;
+            gap: 26px;
             align-items: baseline;
             padding: 4px 0;
         }
@@ -331,7 +331,7 @@
         .ss-weather .hl { font-size: 1.05rem; color: #aab6cc; margin-top: 4px; }
         .ss-sched { margin-top: 26px; width: 100%; max-width: 520px; }
         .ss-sched h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 2px; color: #ffcc44; margin-bottom: 8px; }
-        .ss-ev { font-size: 1.3rem; padding: 5px 0; display: flex; gap: 14px; justify-content: center; }
+        .ss-ev { font-size: 1.3rem; padding: 5px 0; display: flex; gap: 26px; justify-content: center; }
         .ss-ev .et { color: #ffcc44; font-weight: 700; min-width: 92px; text-align: right; }
         .ss-none { color: #8893aa; font-size: 1.1rem; }
         .ss-hint { margin-top: 30px; font-size: 0.9rem; color: #6b7488; }
@@ -466,6 +466,21 @@
             return d.getFullYear() + "-" +
                 String(d.getMonth() + 1).padStart(2, "0") + "-" +
                 String(d.getDate()).padStart(2, "0");
+        }
+
+        // Manual time/date formatting — old iPad Safari ignores toLocale options
+        // and tacks on seconds and "PDT", which we don't want.
+        var WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        var MONTHS_FULL = ["January", "February", "March", "April", "May", "June",
+                           "July", "August", "September", "October", "November", "December"];
+        function fmtTime(d) {
+            var h = d.getHours(), m = d.getMinutes();
+            var ap = h >= 12 ? "PM" : "AM";
+            h = h % 12; if (h === 0) h = 12;
+            return h + ":" + (m < 10 ? "0" + m : m) + " " + ap;
+        }
+        function fmtDate(d) {
+            return WEEKDAYS[d.getDay()] + ", " + MONTHS_FULL[d.getMonth()] + " " + d.getDate();
         }
 
         // ---- Standalone chore config (served as /chores.json) ----------------
@@ -687,8 +702,7 @@
                 });
 
                 var now = new Date();
-                document.getElementById("last-updated").textContent =
-                    "Updated " + now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                document.getElementById("last-updated").textContent = "Updated " + fmtTime(now);
         }
 
         function loadScores() {
@@ -798,8 +812,8 @@
             if (!ss) return;
             var now = new Date();
             ss.innerHTML =
-                '<div class="ss-clock">' + now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + '</div>' +
-                '<div class="ss-date">' + now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) + '</div>' +
+                '<div class="ss-clock">' + fmtTime(now) + '</div>' +
+                '<div class="ss-date">' + fmtDate(now) + '</div>' +
                 ssWeatherHtml() +
                 ssSchedHtml() +
                 '<div class="ss-hint">tap to return</div>';
@@ -822,7 +836,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v11)…";
+        document.getElementById("last-updated").textContent = "Loading (v12)…";
         loadScores();
         loadCalendar();
         loadWeather();
