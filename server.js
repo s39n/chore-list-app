@@ -334,6 +334,16 @@ http.createServer((req, res) => {
     console.log(`Parent:  http://<your-PC-IP>:${PORT}/approve.html  (PIN: ${PARENT_PIN})\n`);
 });
 
-// Keep weather fresh: fetch on boot, then hourly.
-fetchWeather();
+// Keep weather fresh. The first fetch can race container networking coming up,
+// so retry a few times on boot until it lands, then refresh hourly.
+(async function () {
+    for (let i = 0; i < 6; i++) {
+        await fetchWeather();
+        try {
+            const w = JSON.parse(fs.readFileSync(WEATHER_FILE, "utf8"));
+            if (w && w.temp != null) break;
+        } catch { /* not written yet — retry */ }
+        await new Promise((r) => setTimeout(r, 15000));
+    }
+})();
 setInterval(fetchWeather, 60 * 60 * 1000);
