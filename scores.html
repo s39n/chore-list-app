@@ -24,18 +24,21 @@
 
         h1 {
             color: #fff;
-            font-size: 1.4rem;
-            letter-spacing: 2px;
+            font-size: 1rem;
+            letter-spacing: 1.5px;
             text-transform: uppercase;
-            margin-bottom: 4px;
+            margin-bottom: 12px;
             text-align: center;
         }
 
         #last-updated {
+            position: absolute;
+            top: 10px;
+            left: 14px;
+            margin: 0;
             color: #666;
             font-size: 0.75rem;
-            margin-bottom: 16px;
-            text-align: center;
+            text-align: left;
         }
 
         #scoreboard {
@@ -870,7 +873,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v15)…";
+        document.getElementById("last-updated").textContent = "Loading (v16)…";
         loadScores();
         loadCalendar();
         loadWeather();
