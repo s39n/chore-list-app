@@ -52,15 +52,9 @@
         <h2>Banked balances</h2>
         <div id="balances"></div>
 
-        <h2>Point values</h2>
-        <div class="sub">Set what each chore is worth. Blank uses the default.</div>
-        <div class="card">
-            <div class="pv-row"><span><strong>Default (any unlisted chore)</strong></span>
-                <input id="default-points" type="number" min="0"></div>
-            <div id="pv-list"></div>
-            <div style="margin-top:12px;"><button onclick="savePoints()">Save point values</button>
-                <span id="pv-saved" class="approved" style="display:none;">Saved ✓</span></div>
-        </div>
+        <h2>Chore points</h2>
+        <div class="sub">What each chore is worth. Edit these in chores.json.</div>
+        <div class="card"><div id="pv-list"></div></div>
     </div>
 
     <script>
@@ -74,7 +68,7 @@
 
         var PIN = "";
         var store = null;
-        var tasks = [];
+        var CONFIG = { chores: [], defaultPoints: 10 };
 
         function getWeekStart() {
             var now = new Date();
@@ -118,19 +112,21 @@
         function loadAll() {
             return Promise.all([
                 fetch("/store").then(function (r) { return r.json(); }),
-                fetch(API_URL + "/tasks", { headers: { "Authorization": "Bearer " + API_TOKEN } })
-                    .then(function (r) { return r.json(); })
+                fetch("/chores.json").then(function (r) { return r.json(); })
             ]).then(function (res) {
                 store = res[0];
-                tasks = (res[1] && res[1].data) ? res[1].data : (res[1] || []);
+                CONFIG = res[1] || { chores: [], defaultPoints: 10 };
             });
         }
 
-        function kidWeeklyDone(kidId, weekStart) {
-            return tasks.filter(function (t) {
-                return t.assigned_to === kidId && t.status === "done" &&
-                    t.updated_at && new Date(t.updated_at) >= weekStart;
+        // A kid's logged completions this week → { count, points }. Same source
+        // the board uses, so the numbers line up exactly.
+        function kidWeekly(kidId, weekStart) {
+            var list = (store.completions || []).filter(function (c) {
+                return String(c.kidId) === String(kidId) && new Date(c.at) >= weekStart;
             });
+            var pts = list.reduce(function (s, c) { return s + (c.points || 0); }, 0);
+            return { count: list.length, points: pts };
         }
 
         function render() {
@@ -142,8 +138,8 @@
             var ap = document.getElementById("approvals");
             ap.innerHTML = "";
             KIDS.forEach(function (kid) {
-                var done = kidWeeklyDone(kid.id, weekStart);
-                var earned = done.reduce(function (sum, t) { return sum + pointValue(t.title); }, 0);
+                var w = kidWeekly(kid.id, weekStart);
+                var earned = w.points;
                 var prior = (store.approvals || []).find(function (a) {
                     return a.kidId === String(kid.id) && a.weekStart === wkKey;
                 });
@@ -153,7 +149,7 @@
                 card.innerHTML =
                     '<div class="row">' +
                         '<div><div class="kid-name">' + kid.name + '</div>' +
-                            '<div class="muted">' + done.length + ' chores done &middot; ' + earned + ' pts earned</div>' +
+                            '<div class="muted">' + w.count + ' completions &middot; ' + earned + ' pts earned</div>' +
                             (prior ? '<div class="approved">Approved: ' + prior.points + ' pts</div>' : '') +
                         '</div>' +
                         '<div class="row" style="gap:8px;">' +
@@ -185,21 +181,14 @@
                 bal.appendChild(card);
             });
 
-            // --- Point values ---
-            document.getElementById("default-points").value = store.defaultPoints;
-            var titles = {};
-            tasks.forEach(function (t) {
-                if (KIDS.some(function (k) { return k.id === t.assigned_to; })) titles[t.title] = true;
-            });
-            Object.keys(store.pointValues || {}).forEach(function (tt) { titles[tt] = true; });
+            // --- Chore points (read-only; configured in chores.json) ---
             var list = document.getElementById("pv-list");
             list.innerHTML = "";
-            Object.keys(titles).sort().forEach(function (title) {
+            (CONFIG.chores || []).forEach(function (c) {
+                var pts = (typeof c.points === "number") ? c.points : (CONFIG.defaultPoints || 0);
                 var row = document.createElement("div");
                 row.className = "pv-row";
-                var current = (store.pointValues && store.pointValues.hasOwnProperty(title)) ? store.pointValues[title] : "";
-                row.innerHTML = '<span>' + title + '</span>' +
-                    '<input type="number" min="0" data-title="' + encodeURIComponent(title) + '" value="' + current + '" placeholder="' + store.defaultPoints + '">';
+                row.innerHTML = '<span>' + c.title + '</span><strong>' + pts + ' pts</strong>';
                 list.appendChild(row);
             });
         }
@@ -226,27 +215,6 @@
               .then(function (s) { store = s; render(); });
         }
 
-        function savePoints() {
-            var values = {};
-            document.querySelectorAll("#pv-list input[data-title]").forEach(function (inp) {
-                var title = decodeURIComponent(inp.getAttribute("data-title"));
-                if (inp.value !== "") values[title] = Number(inp.value);
-            });
-            var defRaw = document.getElementById("default-points").value;
-            var def = defRaw === "" ? store.defaultPoints : Number(defRaw);
-            fetch("/store/points", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
-                body: JSON.stringify({ defaultPoints: def, pointValues: values })
-            }).then(function (r) { return r.json(); })
-              .then(function (s) {
-                  store = s;
-                  var tag = document.getElementById("pv-saved");
-                  tag.style.display = "inline";
-                  setTimeout(function () { tag.style.display = "none"; }, 1500);
-                  render();
-              });
-        }
     </script>
 </body>
 </html>
