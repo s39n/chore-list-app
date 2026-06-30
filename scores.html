@@ -192,6 +192,28 @@
             padding: 12px 0;
         }
 
+        /* Due-date line under an open task title */
+        .task-due {
+            display: block;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #8a8aa0;
+            margin-top: 4px;
+            letter-spacing: 0.3px;
+        }
+        .task-due.overdue { color: #ff7066; }
+
+        /* "Completed" divider above the done list */
+        .done-header {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #555;
+            margin: 12px 0 4px;
+            border-top: 1px solid rgba(255,255,255,0.07);
+            padding-top: 10px;
+        }
+
         #error-msg {
             color: #f66;
             text-align: center;
@@ -383,6 +405,25 @@
             return (t.title || "").replace(/\s*\([^)]*\)\s*$/, "");
         }
 
+        // A short due-date label for a task. Dated tasks show "Due Jun 30";
+        // recurring chores (no due_date) show "Daily". Returns "" if neither.
+        var MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        function dueLabel(t) {
+            if (t.due_date) {
+                var ds = String(t.due_date).slice(0, 10);
+                var p = ds.split("-");
+                if (p.length === 3) {
+                    var mo = MONTHS[parseInt(p[1], 10) - 1] || p[1];
+                    var lbl = "Due " + mo + " " + parseInt(p[2], 10);
+                    return { text: ds < todayStr() ? lbl + " (overdue)" : lbl,
+                             overdue: ds < todayStr() };
+                }
+                return { text: "Due " + ds, overdue: false };
+            }
+            if (t.is_recurring) return { text: "Daily", overdue: false };
+            return { text: "", overdue: false };
+        }
+
         // Renders the board from the tasks payload (and current STORE).
         function render(body) {
                 var tasks = (body && body.data) ? body.data : (body || []);
@@ -437,10 +478,15 @@
 
                     var openHtml = "";
                     todayOpen.forEach(function(t) {
+                        var due = dueLabel(t);
+                        var dueHtml = due.text
+                            ? '<span class="task-due' + (due.overdue ? ' overdue' : '') + '">' + escHtml(due.text) + '</span>'
+                            : '';
                         openHtml +=
                             '<div class="task-open">' +
                                 '<span class="task-title">' + displayTitle(t) +
-                                    ' <span class="pts-badge">+' + pointValue(t.title) + '</span></span>' +
+                                    ' <span class="pts-badge">+' + pointValue(t.title) + '</span>' +
+                                    dueHtml + '</span>' +
                                 '<button class="done-btn" id="btn-' + t.id + '" onclick="markDone(' + t.id + ')">Done!</button>' +
                             '</div>';
                     });
@@ -456,7 +502,7 @@
                     });
 
                     var bodyHtml = openHtml || '<div class="all-done">All done! 🎉</div>';
-                    if (doneHtml) bodyHtml += doneHtml;
+                    if (doneHtml) bodyHtml += '<div class="done-header">Completed today</div>' + doneHtml;
 
                     card.innerHTML =
                         '<div class="kid-header">' +
@@ -554,7 +600,7 @@
             if (ov) ov.style.display = awake ? "none" : "block";
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v4)…";
+        document.getElementById("last-updated").textContent = "Loading (v5)…";
         loadScores();
         loadCalendar();
         nightCheck();
