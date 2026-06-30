@@ -204,13 +204,57 @@
             #scoreboard { flex-direction: row; flex-wrap: nowrap; align-items: flex-start; }
             .kid-card { max-width: none; }
         }
+
+        /* Today's calendar strip */
+        #calendar-panel {
+            background: #16213e;
+            border-radius: 16px;
+            border-left: 5px solid #ffcc44;
+            padding: 14px 18px;
+            width: 100%;
+            max-width: 1000px;
+            margin-bottom: 16px;
+        }
+        #calendar-panel h2 {
+            color: #ffcc44;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        .cal-event {
+            display: flex;
+            gap: 12px;
+            align-items: baseline;
+            padding: 4px 0;
+        }
+        .cal-time {
+            color: #ffcc44;
+            font-weight: 700;
+            font-size: 0.95rem;
+            min-width: 90px;
+            flex-shrink: 0;
+        }
+        .cal-title { color: #fff; font-size: 1rem; }
+        .cal-none { color: #666; font-size: 0.9rem; }
+
+        /* Night blackout — covers everything so a dark room stays dark */
+        #night-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #000;
+            z-index: 9999;
+            display: none;
+        }
     </style>
 </head>
 <body>
     <h1>Chore Board</h1>
     <div id="last-updated">Loading...</div>
+    <div id="calendar-panel"></div>
     <div id="scoreboard"></div>
     <div id="error-msg">Could not load. Will retry...</div>
+    <div id="night-overlay"></div>
 
     <script>
         // --- Old-iPad Safari support: pure XHR, no fetch/Promise needed ---
@@ -466,9 +510,57 @@
             );
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v2)…";
+        // --- Today's calendar -------------------------------------------------
+        // calendar.json is regenerated each morning from the Family calendar and
+        // served by server.js as a static file. Shape: { events: [{ time, title }] }.
+        function escHtml(s) {
+            return String(s == null ? "" : s)
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+        function renderCalendar(data) {
+            var panel = document.getElementById("calendar-panel");
+            if (!panel) return;
+            var evs = (data && data.events) ? data.events : [];
+            var html = "<h2>Today</h2>";
+            if (!evs.length) {
+                html += '<div class="cal-none">Nothing on the calendar today</div>';
+            } else {
+                for (var i = 0; i < evs.length; i++) {
+                    html +=
+                        '<div class="cal-event">' +
+                            '<span class="cal-time">' + escHtml(evs[i].time) + '</span>' +
+                            '<span class="cal-title">' + escHtml(evs[i].title) + '</span>' +
+                        '</div>';
+                }
+            }
+            panel.innerHTML = html;
+        }
+        function loadCalendar() {
+            xhrJson("GET", "/calendar.json", null, null,
+                function (d) { renderCalendar(d); },
+                function () { /* keep last good calendar on a blip */ }
+            );
+        }
+
+        // --- Night blackout (board awake 6:30am–8:00pm) -----------------------
+        var WAKE_MIN = 6 * 60 + 30;   // 6:30 am
+        var SLEEP_MIN = 20 * 60;      // 8:00 pm
+        function nightCheck() {
+            var now = new Date();
+            var mins = now.getHours() * 60 + now.getMinutes();
+            var awake = mins >= WAKE_MIN && mins < SLEEP_MIN;
+            var ov = document.getElementById("night-overlay");
+            if (ov) ov.style.display = awake ? "none" : "block";
+        }
+
+        document.getElementById("last-updated").textContent = "Loading (v4)…";
         loadScores();
+        loadCalendar();
+        nightCheck();
         setInterval(loadScores, 60 * 1000);
+        setInterval(loadCalendar, 5 * 60 * 1000);
+        setInterval(nightCheck, 30 * 1000);
     </script>
 </body>
 </html>
