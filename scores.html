@@ -335,6 +335,21 @@
         .ss-ev .et { color: #ffcc44; font-weight: 700; min-width: 92px; text-align: right; }
         .ss-none { color: #8893aa; font-size: 1.1rem; }
         .ss-hint { margin-top: 30px; font-size: 0.9rem; color: #6b7488; }
+        /* Slow drift so no pixel stays lit in one spot (LCD image-retention guard) */
+        .ss-inner {
+            -webkit-animation: ss-drift 80s ease-in-out infinite alternate;
+            animation: ss-drift 80s ease-in-out infinite alternate;
+        }
+        @-webkit-keyframes ss-drift {
+            0%   { -webkit-transform: translate(-16px, -12px); }
+            50%  { -webkit-transform: translate(14px, 10px); }
+            100% { -webkit-transform: translate(-10px, 14px); }
+        }
+        @keyframes ss-drift {
+            0%   { transform: translate(-16px, -12px); }
+            50%  { transform: translate(14px, 10px); }
+            100% { transform: translate(-10px, 14px); }
+        }
     </style>
 </head>
 <body>
@@ -756,7 +771,7 @@
         }
         function loadCalendar() {
             xhrJson("GET", "/calendar.json", null, null,
-                function (d) { CAL = d; renderCalendar(d); if (ssVisible) updateScreensaver(); },
+                function (d) { CAL = d; renderCalendar(d); if (ssVisible) ssFill(); },
                 function () { /* keep last good calendar on a blip */ }
             );
         }
@@ -782,7 +797,7 @@
 
         function loadWeather() {
             xhrJson("GET", "/weather.json", null, null,
-                function (d) { if (d) { WEATHER = d; if (ssVisible) updateScreensaver(); } },
+                function (d) { if (d) { WEATHER = d; if (ssVisible) ssFill(); } },
                 function () {}
             );
         }
@@ -807,23 +822,36 @@
             }
             return h + '</div>';
         }
-        function updateScreensaver() {
-            var ss = document.getElementById("screensaver");
-            if (!ss) return;
+        // Fill the (already-built) inner nodes — doesn't recreate .ss-inner, so
+        // the drift animation keeps running uninterrupted.
+        function ssFill() {
             var now = new Date();
-            ss.innerHTML =
-                '<div class="ss-clock">' + fmtTime(now) + '</div>' +
-                '<div class="ss-date">' + fmtDate(now) + '</div>' +
-                ssWeatherHtml() +
-                ssSchedHtml() +
-                '<div class="ss-hint">tap to return</div>';
+            var c = document.getElementById("ss-clock");   if (c) c.textContent = fmtTime(now);
+            var d = document.getElementById("ss-date");    if (d) d.textContent = fmtDate(now);
+            var w = document.getElementById("ss-weather"); if (w) w.innerHTML = ssWeatherHtml();
+            var s = document.getElementById("ss-sched");   if (s) s.innerHTML = ssSchedHtml();
         }
         function showScreensaver() {
             if (!isAwake()) return;            // never on top of the night blackout
             ssVisible = true;
-            updateScreensaver();
             var ss = document.getElementById("screensaver");
-            if (ss) ss.className = "show";
+            if (!ss) return;
+            ss.innerHTML = '<div class="ss-inner">' +
+                '<div class="ss-clock" id="ss-clock"></div>' +
+                '<div class="ss-date" id="ss-date"></div>' +
+                '<div id="ss-weather"></div>' +
+                '<div id="ss-sched"></div>' +
+                '<div class="ss-hint">tap to return</div>' +
+                '</div>';
+            ssFill();
+            ss.className = "show";
+        }
+        // Light per-second tick: just the clock/date text, no DOM rebuild.
+        function tickScreensaver() {
+            if (!ssVisible) return;
+            var now = new Date();
+            var c = document.getElementById("ss-clock"); if (c) c.textContent = fmtTime(now);
+            var d = document.getElementById("ss-date");  if (d) d.textContent = fmtDate(now);
         }
         function hideScreensaver() {
             ssVisible = false;
@@ -836,7 +864,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v12)…";
+        document.getElementById("last-updated").textContent = "Loading (v13)…";
         loadScores();
         loadCalendar();
         loadWeather();
@@ -845,7 +873,7 @@
         setInterval(loadCalendar, 5 * 60 * 1000);
         setInterval(loadWeather, 30 * 60 * 1000);
         setInterval(nightCheck, 30 * 1000);
-        setInterval(function () { if (ssVisible) updateScreensaver(); }, 1000);
+        setInterval(tickScreensaver, 1000);
         var _ssEvents = ["touchstart", "mousedown", "keydown"];
         for (var _i = 0; _i < _ssEvents.length; _i++) {
             document.addEventListener(_ssEvents[_i], resetIdle, true);
