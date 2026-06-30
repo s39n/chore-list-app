@@ -216,6 +216,23 @@
             margin-right: 8px;
             flex-shrink: 0;
         }
+        /* "+1 again" button on a completed chore */
+        .again-btn {
+            background: var(--color);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        .again-btn:active { opacity: 0.7; }
+
         /* "×N" count and points in the completed-today tally */
         .done-times { color: var(--color); font-weight: 700; }
         .done-pts {
@@ -544,7 +561,9 @@
 
                     var todayOpen = mine.filter(function(t) {
                         if (t.status === "archived") return false;
-                        // Recurring chores always stay tappable so repeats can count.
+                        // Done at least once today -> it moves to the completed tally
+                        // below (tap "+1" there to add another).
+                        if (taskCountToday(kid.id, t.id, todayStart) > 0) return false;
                         if (t.is_recurring) return true;
                         // One-off tasks: gone once done; else show if due today/overdue.
                         if (t.status === "done") return false;
@@ -584,6 +603,7 @@
                                 '<span class="task-done-title">' + escHtml(displayTitle({ title: d.title })) +
                                     (d.count > 1 ? ' <span class="done-times">×' + d.count + '</span>' : '') + '</span>' +
                                 '<span class="done-pts">+' + d.points + '</span>' +
+                                '<button class="again-btn" id="again-' + d.taskId + '" onclick="markDone(' + d.taskId + ')">+1</button>' +
                                 '<button class="undo-btn" id="undo-' + d.taskId + '" onclick="markUndone(' + d.taskId + ', ' + kid.id + ')">Undo</button>' +
                             '</div>';
                     });
@@ -687,7 +707,7 @@
             if (ov) ov.style.display = awake ? "none" : "block";
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v8)…";
+        document.getElementById("last-updated").textContent = "Loading (v9)…";
         loadScores();
         loadCalendar();
         nightCheck();
