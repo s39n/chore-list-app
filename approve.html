@@ -30,6 +30,10 @@
         #gate input { text-align: center; letter-spacing: 6px; font-size: 1.5rem; width: 160px; }
         .err { color: #c0392b; font-size: 0.85rem; margin-top: 6px; }
         .redeem-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+        .chore-edit .row { flex-wrap: wrap; gap: 8px; }
+        .day-lbl { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; }
+        label { font-size: 0.9rem; }
+        .ce-rotate, .ce-days { display: inline-flex; align-items: center; flex-wrap: wrap; }
     </style>
 </head>
 <body>
@@ -55,9 +59,15 @@
         <h2>Banked balances</h2>
         <div id="balances"></div>
 
-        <h2>Chore points</h2>
-        <div class="sub">What each chore is worth. Edit these in chores.json.</div>
-        <div class="card"><div id="pv-list"></div></div>
+        <h2>Manage chores</h2>
+        <div class="sub">Add, edit, or remove chores. Saving updates the board and this page for everyone.</div>
+        <div id="chore-editor"></div>
+        <div style="margin:10px 0 28px;">
+            <button class="secondary" onclick="addChore()">+ Add chore</button>
+            <button onclick="saveChores()">Save chores</button>
+            <span id="chores-saved" class="approved" style="display:none;">Saved ✓</span>
+            <div id="chores-err" class="err"></div>
+        </div>
     </div>
 
     <script>
@@ -199,16 +209,8 @@
                 bal.appendChild(card);
             });
 
-            // --- Chore points (read-only; configured in chores.json) ---
-            var list = document.getElementById("pv-list");
-            list.innerHTML = "";
-            (CONFIG.chores || []).forEach(function (c) {
-                var pts = (typeof c.points === "number") ? c.points : (CONFIG.defaultPoints || 0);
-                var row = document.createElement("div");
-                row.className = "pv-row";
-                row.innerHTML = '<span>' + c.title + '</span><strong>' + pts + ' pts</strong>';
-                list.appendChild(row);
-            });
+            // --- Manage chores ---
+            renderChores();
         }
 
         function approve(kidId, wkKey) {
@@ -231,6 +233,115 @@
                 body: JSON.stringify({ kidId: kidId, amount: amt, note: note })
             }).then(function (r) { return r.json(); })
               .then(function (s) { store = s; render(); });
+        }
+
+        // ---- Manage chores editor -------------------------------------------
+        function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+        function slugify(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,""); }
+        var DAY_DEFS = [["sun","S"],["mon","M"],["tue","T"],["wed","W"],["thu","Th"],["fri","F"],["sat","Sa"]];
+
+        function dayBoxes(days){
+            var arr = Array.isArray(days) ? days.map(function(d){ return String(d).toLowerCase(); }) : [];
+            return DAY_DEFS.map(function(p){
+                return '<label class="day-lbl"><input type="checkbox" data-day="'+p[0]+'"'+(arr.indexOf(p[0])>=0?" checked":"")+'>'+p[1]+'</label>';
+            }).join("");
+        }
+        function kidBoxes(rotateList){
+            var sel = Array.isArray(rotateList) ? rotateList : [];
+            return (CONFIG.kids||[]).map(function(k){
+                return '<label class="day-lbl"><input type="checkbox" data-kid="'+esc(k.name)+'"'+(sel.indexOf(k.name)>=0?" checked":"")+'>'+esc(k.name)+'</label>';
+            }).join("");
+        }
+        function choreCard(c){
+            c = c || {};
+            var isDaily = (!c.days || c.days === "daily");
+            var assignVal = c.rotate ? "rotate" : ((!c.who || c.who === "all") ? "all" : "kid:"+c.who);
+            var opts = '<option value="all"'+(assignVal==="all"?" selected":"")+'>Everyone</option>'
+                     + '<option value="rotate"'+(assignVal==="rotate"?" selected":"")+'>Rotate</option>'
+                     + (CONFIG.kids||[]).map(function(k){ var v="kid:"+k.name; return '<option value="'+esc(v)+'"'+(assignVal===v?" selected":"")+'>Just '+esc(k.name)+'</option>'; }).join("");
+            var pts = (typeof c.points==="number") ? c.points : (CONFIG.defaultPoints||10);
+            return '<div class="card chore-edit" data-id="'+esc(c.id||"")+'">'
+                + '<div class="row">'
+                +   '<input type="text" class="ce-title" placeholder="Chore name" value="'+esc(c.title||"")+'" style="flex:1;min-width:160px">'
+                +   '<input type="number" class="ce-points" min="0" title="points" value="'+pts+'" style="width:74px">'
+                +   '<button class="secondary" onclick="this.closest(\'.chore-edit\').remove()">Delete</button>'
+                + '</div>'
+                + '<div class="row" style="margin-top:8px;">'
+                +   '<label>Days: <select class="ce-freq" onchange="toggleDays(this)"><option value="daily"'+(isDaily?" selected":"")+'>Every day</option><option value="some"'+(!isDaily?" selected":"")+'>Specific days</option></select></label>'
+                +   '<span class="ce-days" style="'+(isDaily?"display:none;":"")+'">'+dayBoxes(c.days)+'</span>'
+                + '</div>'
+                + '<div class="row" style="margin-top:8px;">'
+                +   '<label>Who: <select class="ce-assign" onchange="toggleRotate(this)">'+opts+'</select></label>'
+                +   '<span class="ce-rotate" style="'+(assignVal==="rotate"?"":"display:none;")+'">'+kidBoxes(c.rotate)+' <label class="day-lbl">start <input type="number" class="ce-offset" value="'+(c.offset||0)+'" style="width:46px"></label></span>'
+                + '</div>'
+                + '</div>';
+        }
+        function toggleDays(sel){ sel.closest(".chore-edit").querySelector(".ce-days").style.display = sel.value==="some" ? "" : "none"; }
+        function toggleRotate(sel){ sel.closest(".chore-edit").querySelector(".ce-rotate").style.display = sel.value==="rotate" ? "" : "none"; }
+        function renderChores(){
+            var box = document.getElementById("chore-editor");
+            if (!box) return;
+            box.innerHTML = (CONFIG.chores||[]).map(choreCard).join("");
+        }
+        function addChore(){
+            document.getElementById("chore-editor").insertAdjacentHTML("beforeend", choreCard(null));
+        }
+        function collectChores(){
+            var used = {}, out = [];
+            document.querySelectorAll(".chore-edit").forEach(function(div){
+                var title = div.querySelector(".ce-title").value.trim();
+                if (!title) return;
+                var id = div.getAttribute("data-id") || slugify(title) || "chore";
+                while (used[id]) id = id.replace(/-\d+$/,"") + "-" + (Math.floor(Math.random()*900)+100);
+                used[id] = true;
+                var c = { id: id, title: title, points: Number(div.querySelector(".ce-points").value) || (CONFIG.defaultPoints||10) };
+                var freq = div.querySelector(".ce-freq").value;
+                if (freq === "some") {
+                    var ds = [];
+                    div.querySelectorAll(".ce-days input[data-day]").forEach(function(cb){ if(cb.checked) ds.push(cb.getAttribute("data-day")); });
+                    c.days = ds.length ? ds : "daily";
+                } else { c.days = "daily"; }
+                var a = div.querySelector(".ce-assign").value;
+                if (a === "rotate") {
+                    var ks = [];
+                    div.querySelectorAll(".ce-rotate input[data-kid]").forEach(function(cb){ if(cb.checked) ks.push(cb.getAttribute("data-kid")); });
+                    c.rotate = ks;
+                    var off = Number(div.querySelector(".ce-offset").value);
+                    if (off) c.offset = off;
+                } else if (a.indexOf("kid:") === 0) {
+                    c.who = a.slice(4);
+                } else {
+                    c.who = "all";
+                }
+                out.push(c);
+            });
+            return out;
+        }
+        function saveChores(){
+            var errEl = document.getElementById("chores-err");
+            errEl.textContent = "";
+            var cfg = {
+                rotationCadence: CONFIG.rotationCadence || "week",
+                rotationEpoch: CONFIG.rotationEpoch || "2026-06-29",
+                defaultPoints: CONFIG.defaultPoints || 10,
+                kids: CONFIG.kids || [],
+                chores: collectChores()
+            };
+            fetch("/chores", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
+                body: JSON.stringify(cfg)
+            }).then(function(r){
+                if (r.status === 401) { errEl.textContent = "Wrong PIN — reload and unlock again."; return null; }
+                return r.json();
+            }).then(function(saved){
+                if (!saved) return;
+                CONFIG = saved;
+                renderChores();
+                var t = document.getElementById("chores-saved");
+                t.style.display = "inline";
+                setTimeout(function(){ t.style.display = "none"; }, 1500);
+            }).catch(function(){ errEl.textContent = "Could not save. Check connection."; });
         }
 
     </script>

@@ -21,6 +21,11 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 // JSON file that persists points, balances, and approval history.
 const DATA_FILE = path.join(DATA_DIR, "store.json");
 
+// Live chore config lives in the volume so parent edits survive rebuilds.
+// The image ships a baked-in copy that seeds the volume on first run.
+const CHORES_FILE = path.join(DATA_DIR, "chores.json");
+const CHORES_SEED = path.join(__dirname, "chores.json");
+
 const MIME = {
     ".html": "text/html",
     ".js":   "text/javascript",
@@ -44,6 +49,48 @@ function loadStore() {
 function saveStore(store) {
     fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
     fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2));
+}
+
+// Chore config: read from the volume, seeding from the baked-in default the
+// first time (so existing installs pick up the shipped chores once).
+function loadChores() {
+    try {
+        return JSON.parse(fs.readFileSync(CHORES_FILE, "utf8"));
+    } catch {
+        try {
+            const seed = fs.readFileSync(CHORES_SEED, "utf8");
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+            fs.writeFileSync(CHORES_FILE, seed);
+            return JSON.parse(seed);
+        } catch {
+            return { chores: [], kids: [], defaultPoints: 10 };
+        }
+    }
+}
+function saveChores(cfg) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CHORES_FILE, JSON.stringify(cfg, null, 2));
+}
+
+// GET /chores.json (open) returns the config; PUT /chores (parent PIN) saves it.
+async function handleChores(req, res) {
+    if (req.method === "GET") {
+        return sendJson(res, 200, loadChores());
+    }
+    if (req.method === "PUT") {
+        if (!authorized(req)) {
+            return sendJson(res, 401, { error: "bad or missing parent PIN" });
+        }
+        let body;
+        try { body = await readJsonBody(req); }
+        catch (e) { return sendJson(res, 400, { error: e.message }); }
+        if (!body || !Array.isArray(body.chores)) {
+            return sendJson(res, 400, { error: "chores array required" });
+        }
+        saveChores(body);
+        return sendJson(res, 200, loadChores());
+    }
+    return sendJson(res, 405, { error: "method not allowed" });
 }
 
 function readJsonBody(req) {
@@ -182,6 +229,12 @@ http.createServer((req, res) => {
         handleStore(req, res, req.url.split("?")[0]).catch(() => {
             sendJson(res, 500, { error: "store error" });
         });
+        return;
+    }
+
+    // Chore config (served from the data volume; parents edit it via PUT /chores)
+    if (req.url.split("?")[0] === "/chores.json" || req.url.split("?")[0] === "/chores") {
+        handleChores(req, res).catch(() => sendJson(res, 500, { error: "chores error" }));
         return;
     }
 
