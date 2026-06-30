@@ -300,6 +300,7 @@
             font-size: 0.95rem;
             min-width: 90px;
             flex-shrink: 0;
+            margin-right: 16px;
         }
         .cal-title { color: #fff; font-size: 1rem; }
         .cal-none { color: #666; font-size: 0.9rem; }
@@ -337,7 +338,7 @@
         .ss-sched { margin-top: 26px; width: 100%; max-width: 520px; }
         .ss-sched h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 2px; color: #ffcc44; margin-bottom: 8px; }
         .ss-ev { font-size: 1.3rem; padding: 5px 0; display: flex; gap: 26px; justify-content: center; }
-        .ss-ev .et { color: #ffcc44; font-weight: 700; min-width: 92px; text-align: right; }
+        .ss-ev .et { color: #ffcc44; font-weight: 700; min-width: 92px; text-align: right; margin-right: 22px; }
         .ss-none { color: #8893aa; font-size: 1.1rem; }
         .ss-hint { margin-top: 30px; font-size: 0.9rem; color: #6b7488; }
         /* Slow drift so no pixel stays lit in one spot (LCD image-retention guard) */
@@ -869,7 +870,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v14)…";
+        document.getElementById("last-updated").textContent = "Loading (v15)…";
         loadScores();
         loadCalendar();
         loadWeather();
