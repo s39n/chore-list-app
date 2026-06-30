@@ -408,20 +408,18 @@
         // A short due-date label for a task. Dated tasks show "Due Jun 30";
         // recurring chores (no due_date) show "Daily". Returns "" if neither.
         var MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        // Label an open task ONLY when its due date isn't today, so stale/overdue
+        // chores stand out. Tasks due today, and recurring "daily" chores with no
+        // due date, get no label (keeps the common case clutter-free).
         function dueLabel(t) {
-            if (t.due_date) {
-                var ds = String(t.due_date).slice(0, 10);
-                var p = ds.split("-");
-                if (p.length === 3) {
-                    var mo = MONTHS[parseInt(p[1], 10) - 1] || p[1];
-                    var lbl = "Due " + mo + " " + parseInt(p[2], 10);
-                    return { text: ds < todayStr() ? lbl + " (overdue)" : lbl,
-                             overdue: ds < todayStr() };
-                }
-                return { text: "Due " + ds, overdue: false };
-            }
-            if (t.is_recurring) return { text: "Daily", overdue: false };
-            return { text: "", overdue: false };
+            if (!t.due_date) return { text: "", overdue: false };
+            var ds = String(t.due_date).slice(0, 10);
+            if (ds === todayStr()) return { text: "", overdue: false };
+            var p = ds.split("-");
+            var lbl = (p.length === 3)
+                ? "Due " + (MONTHS[parseInt(p[1], 10) - 1] || p[1]) + " " + parseInt(p[2], 10)
+                : "Due " + ds;
+            return { text: lbl, overdue: ds < todayStr() };
         }
 
         // Renders the board from the tasks payload (and current STORE).
@@ -468,7 +466,9 @@
 
                     var todayOpen = mine.filter(function(t) {
                         if (t.status === "done" || t.status === "archived") return false;
-                        if (t.due_date) return t.due_date.startsWith(today);
+                        // Dated tasks show if due today OR overdue, so stale ones
+                        // don't silently vanish; future-dated tasks wait their turn.
+                        if (t.due_date) return t.due_date.slice(0, 10) <= today;
                         return t.is_recurring;
                     });
 
@@ -600,7 +600,7 @@
             if (ov) ov.style.display = awake ? "none" : "block";
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v5)…";
+        document.getElementById("last-updated").textContent = "Loading (v6)…";
         loadScores();
         loadCalendar();
         nightCheck();
