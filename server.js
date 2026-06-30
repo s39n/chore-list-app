@@ -2,7 +2,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { defaultStore, approveWeek, redeemPoints } from "./points.js";
+import { defaultStore, approveWeek, redeemPoints, logCompletion, unlogCompletion } from "./points.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -75,6 +75,35 @@ async function handleStore(req, res, urlPath) {
     // GET /store — full store (read-only, no PIN: kids' tablet needs point values + balances)
     if (req.method === "GET" && urlPath === "/store") {
         return sendJson(res, 200, loadStore());
+    }
+
+    // POST /store/complete — log one chore completion ({ kidId, taskId, title }).
+    // No PIN: the kids' tablet records these every time "Done" is tapped.
+    if (req.method === "POST" && urlPath === "/store/complete") {
+        let body;
+        try { body = await readJsonBody(req); }
+        catch (e) { return sendJson(res, 400, { error: e.message }); }
+        if (!body.kidId || body.taskId === undefined || body.taskId === null) {
+            return sendJson(res, 400, { error: "kidId and taskId required" });
+        }
+        const store = loadStore();
+        logCompletion(store, body.kidId, body.taskId, body.title);
+        saveStore(store);
+        return sendJson(res, 200, store);
+    }
+
+    // POST /store/uncomplete — undo the latest completion for a kid+task. No PIN.
+    if (req.method === "POST" && urlPath === "/store/uncomplete") {
+        let body;
+        try { body = await readJsonBody(req); }
+        catch (e) { return sendJson(res, 400, { error: e.message }); }
+        if (!body.kidId || body.taskId === undefined || body.taskId === null) {
+            return sendJson(res, 400, { error: "kidId and taskId required" });
+        }
+        const store = loadStore();
+        unlogCompletion(store, body.kidId, body.taskId);
+        saveStore(store);
+        return sendJson(res, 200, store);
     }
 
     // Everything below mutates state and requires the parent PIN.

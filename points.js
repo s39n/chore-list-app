@@ -8,7 +8,37 @@ export function defaultStore() {
         balances: {},          // { "<kidId>": number }  redeemable banked points
         approvals: [],         // { weekStart, kidId, points, approvedAt }
         redemptions: [],       // { kidId, amount, note, at }
+        completions: [],       // { kidId, taskId, title, points, at } — one per "Done" tap
     };
+}
+
+// Record a single chore completion (one row per "Done" tap, so repeats count).
+// Points are snapshotted at tap time from the chore's current value. Returns the row.
+export function logCompletion(store, kidId, taskId, title) {
+    if (!store.completions) store.completions = [];
+    const rec = {
+        kidId: String(kidId),
+        taskId: taskId,
+        title: String(title || ""),
+        points: pointValueFor(store, title),
+        at: new Date().toISOString(),
+    };
+    store.completions.push(rec);
+    return rec;
+}
+
+// Undo: remove the most recent completion for this kid + task. Returns the
+// removed row, or null if there was nothing to undo.
+export function unlogCompletion(store, kidId, taskId) {
+    if (!store.completions) { store.completions = []; return null; }
+    const kid = String(kidId);
+    for (let i = store.completions.length - 1; i >= 0; i--) {
+        const c = store.completions[i];
+        if (c.kidId === kid && String(c.taskId) === String(taskId)) {
+            return store.completions.splice(i, 1)[0];
+        }
+    }
+    return null;
 }
 
 // Points a single chore is worth, falling back to the store default.
