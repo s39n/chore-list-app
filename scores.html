@@ -307,6 +307,34 @@
             z-index: 9999;
             display: none;
         }
+
+        /* Semi-transparent screen saver (weather + schedule) after idle */
+        #screensaver {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(10, 12, 30, 0.82);
+            z-index: 9000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            text-align: center;
+            padding: 24px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #screensaver.show { display: flex; }
+        .ss-clock { font-size: 5.5rem; font-weight: 800; line-height: 1; letter-spacing: 2px; }
+        .ss-date { font-size: 1.6rem; color: #cfd6e6; margin-top: 6px; }
+        .ss-weather { margin-top: 22px; font-size: 1.7rem; }
+        .ss-weather .t { font-size: 2.6rem; font-weight: 800; }
+        .ss-weather .hl { font-size: 1.05rem; color: #aab6cc; margin-top: 4px; }
+        .ss-sched { margin-top: 26px; width: 100%; max-width: 520px; }
+        .ss-sched h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 2px; color: #ffcc44; margin-bottom: 8px; }
+        .ss-ev { font-size: 1.3rem; padding: 5px 0; display: flex; gap: 14px; justify-content: center; }
+        .ss-ev .et { color: #ffcc44; font-weight: 700; min-width: 92px; text-align: right; }
+        .ss-none { color: #8893aa; font-size: 1.1rem; }
+        .ss-hint { margin-top: 30px; font-size: 0.9rem; color: #6b7488; }
     </style>
 </head>
 <body>
@@ -316,6 +344,7 @@
     <div id="scoreboard"></div>
     <div id="error-msg">Could not load. Will retry...</div>
     <div id="night-overlay"></div>
+    <div id="screensaver"></div>
 
     <script>
         // --- Old-iPad Safari support: pure XHR, no fetch/Promise needed ---
@@ -713,7 +742,7 @@
         }
         function loadCalendar() {
             xhrJson("GET", "/calendar.json", null, null,
-                function (d) { renderCalendar(d); },
+                function (d) { CAL = d; renderCalendar(d); if (ssVisible) updateScreensaver(); },
                 function () { /* keep last good calendar on a blip */ }
             );
         }
@@ -721,21 +750,93 @@
         // --- Night blackout (board awake 6:30am–8:00pm) -----------------------
         var WAKE_MIN = 6 * 60 + 30;   // 6:30 am
         var SLEEP_MIN = 20 * 60;      // 8:00 pm
-        function nightCheck() {
+        function isAwake() {
             var now = new Date();
             var mins = now.getHours() * 60 + now.getMinutes();
-            var awake = mins >= WAKE_MIN && mins < SLEEP_MIN;
+            return mins >= WAKE_MIN && mins < SLEEP_MIN;
+        }
+        function nightCheck() {
+            var awake = isAwake();
             var ov = document.getElementById("night-overlay");
             if (ov) ov.style.display = awake ? "none" : "block";
+            if (!awake) hideScreensaver();   // night blackout takes priority
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v10)…";
+        // --- Screen saver (weather + schedule, fades in after 5 min idle) -----
+        var WEATHER = null, CAL = null, idleTimer = null, ssVisible = false;
+        var SS_IDLE_MS = 5 * 60 * 1000;
+
+        function loadWeather() {
+            xhrJson("GET", "/weather.json", null, null,
+                function (d) { if (d) { WEATHER = d; if (ssVisible) updateScreensaver(); } },
+                function () {}
+            );
+        }
+        function ssWeatherHtml() {
+            if (!WEATHER || WEATHER.temp == null) return "";
+            var hl = "";
+            if (WEATHER.hi != null && WEATHER.lo != null) hl = " &middot; H " + WEATHER.hi + "° / L " + WEATHER.lo + "°";
+            return '<div class="ss-weather">' + (WEATHER.icon || "") +
+                ' <span class="t">' + WEATHER.temp + '°</span> ' + escHtml(WEATHER.desc || "") +
+                '<div class="hl">' + escHtml(WEATHER.label || "") + hl + '</div></div>';
+        }
+        function ssSchedHtml() {
+            var evs = (CAL && CAL.events) ? CAL.events : [];
+            var h = '<div class="ss-sched"><h3>Today</h3>';
+            if (!evs.length) {
+                h += '<div class="ss-none">Nothing scheduled</div>';
+            } else {
+                for (var i = 0; i < evs.length; i++) {
+                    h += '<div class="ss-ev"><span class="et">' + escHtml(evs[i].time || "") +
+                         '</span><span>' + escHtml(evs[i].title || "") + '</span></div>';
+                }
+            }
+            return h + '</div>';
+        }
+        function updateScreensaver() {
+            var ss = document.getElementById("screensaver");
+            if (!ss) return;
+            var now = new Date();
+            ss.innerHTML =
+                '<div class="ss-clock">' + now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + '</div>' +
+                '<div class="ss-date">' + now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) + '</div>' +
+                ssWeatherHtml() +
+                ssSchedHtml() +
+                '<div class="ss-hint">tap to return</div>';
+        }
+        function showScreensaver() {
+            if (!isAwake()) return;            // never on top of the night blackout
+            ssVisible = true;
+            updateScreensaver();
+            var ss = document.getElementById("screensaver");
+            if (ss) ss.className = "show";
+        }
+        function hideScreensaver() {
+            ssVisible = false;
+            var ss = document.getElementById("screensaver");
+            if (ss) ss.className = "";
+        }
+        function resetIdle() {
+            if (ssVisible) hideScreensaver();
+            if (idleTimer) clearTimeout(idleTimer);
+            idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
+        }
+
+        document.getElementById("last-updated").textContent = "Loading (v11)…";
         loadScores();
         loadCalendar();
+        loadWeather();
         nightCheck();
         setInterval(loadScores, 60 * 1000);
         setInterval(loadCalendar, 5 * 60 * 1000);
+        setInterval(loadWeather, 30 * 60 * 1000);
         setInterval(nightCheck, 30 * 1000);
+        setInterval(function () { if (ssVisible) updateScreensaver(); }, 1000);
+        var _ssEvents = ["touchstart", "mousedown", "keydown"];
+        for (var _i = 0; _i < _ssEvents.length; _i++) {
+            document.addEventListener(_ssEvents[_i], resetIdle, true);
+        }
+        resetIdle();
     </script>
 </body>
 </html>

@@ -26,6 +26,14 @@ const DATA_FILE = path.join(DATA_DIR, "store.json");
 const CHORES_FILE = path.join(DATA_DIR, "chores.json");
 const CHORES_SEED = path.join(__dirname, "chores.json");
 
+// Weather (server fetches Open-Meteo — free, no API key — and caches to the
+// volume so the old iPad never has to call an external API directly).
+const WEATHER_FILE = path.join(DATA_DIR, "weather.json");
+const WEATHER_LAT = process.env.WEATHER_LAT || "39.5349";      // Sparks, NV
+const WEATHER_LON = process.env.WEATHER_LON || "-119.7527";
+const WEATHER_LABEL = process.env.WEATHER_LABEL || "Sparks";
+const WEATHER_TZ = process.env.WEATHER_TZ || "America/Los_Angeles";
+
 const MIME = {
     ".html": "text/html",
     ".js":   "text/javascript",
@@ -70,6 +78,54 @@ function loadChores() {
 function saveChores(cfg) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(CHORES_FILE, JSON.stringify(cfg, null, 2));
+}
+
+// WMO weather code -> short text + emoji for the screen saver.
+function weatherDesc(code) {
+    const m = {
+        0: ["Clear", "☀️"], 1: ["Mainly clear", "🌤️"], 2: ["Partly cloudy", "⛅"], 3: ["Overcast", "☁️"],
+        45: ["Fog", "🌫️"], 48: ["Fog", "🌫️"],
+        51: ["Light drizzle", "🌦️"], 53: ["Drizzle", "🌦️"], 55: ["Drizzle", "🌦️"],
+        61: ["Light rain", "🌧️"], 63: ["Rain", "🌧️"], 65: ["Heavy rain", "🌧️"],
+        66: ["Freezing rain", "🌧️"], 67: ["Freezing rain", "🌧️"],
+        71: ["Light snow", "🌨️"], 73: ["Snow", "🌨️"], 75: ["Heavy snow", "❄️"], 77: ["Snow", "🌨️"],
+        80: ["Showers", "🌦️"], 81: ["Showers", "🌦️"], 82: ["Heavy showers", "⛈️"],
+        85: ["Snow showers", "🌨️"], 86: ["Snow showers", "🌨️"],
+        95: ["Thunderstorm", "⛈️"], 96: ["Thunderstorm", "⛈️"], 99: ["Thunderstorm", "⛈️"]
+    };
+    return m[code] || ["—", "🌡️"];
+}
+
+// Fetch current weather from Open-Meteo and cache it to the volume. Errors are
+// swallowed (keeps the last good file) so a network blip never crashes serving.
+async function fetchWeather() {
+    const url = "https://api.open-meteo.com/v1/forecast?latitude=" + WEATHER_LAT +
+        "&longitude=" + WEATHER_LON +
+        "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min" +
+        "&temperature_unit=fahrenheit&timezone=" + encodeURIComponent(WEATHER_TZ) + "&forecast_days=1";
+    try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("http " + r.status);
+        const j = await r.json();
+        const cur = j.current || {};
+        const day = j.daily || {};
+        const dd = weatherDesc(cur.weather_code);
+        const out = {
+            label: WEATHER_LABEL,
+            temp: Math.round(cur.temperature_2m),
+            code: cur.weather_code,
+            desc: dd[0],
+            icon: dd[1],
+            hi: Array.isArray(day.temperature_2m_max) ? Math.round(day.temperature_2m_max[0]) : null,
+            lo: Array.isArray(day.temperature_2m_min) ? Math.round(day.temperature_2m_min[0]) : null,
+            updated: new Date().toISOString()
+        };
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(WEATHER_FILE, JSON.stringify(out, null, 2));
+        console.log("weather:", out.temp + "°", out.desc);
+    } catch (e) {
+        console.log("weather fetch failed:", e.message);
+    }
 }
 
 // GET /chores.json (open) returns the config; PUT /chores (parent PIN) saves it.
@@ -238,6 +294,18 @@ http.createServer((req, res) => {
         return;
     }
 
+    // Cached weather for the screen saver
+    if (req.url.split("?")[0] === "/weather.json") {
+        try {
+            const w = fs.readFileSync(WEATHER_FILE, "utf8");
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(w);
+        } catch {
+            sendJson(res, 200, {});
+        }
+        return;
+    }
+
     // Serve static files
     // Strip query/hash, decode percent-escapes, and normalize before joining
     let urlPath;
@@ -265,3 +333,7 @@ http.createServer((req, res) => {
     console.log(`Tablet:  http://<your-PC-IP>:${PORT}/scores.html`);
     console.log(`Parent:  http://<your-PC-IP>:${PORT}/approve.html  (PIN: ${PARENT_PIN})\n`);
 });
+
+// Keep weather fresh: fetch on boot, then hourly.
+fetchWeather();
+setInterval(fetchWeather, 60 * 60 * 1000);
