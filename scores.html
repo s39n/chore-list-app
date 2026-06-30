@@ -304,16 +304,39 @@
             );
         }
 
-        // Put a chore back to "pending" if it was marked done by accident.
+        // Put a chore back to "open" if it was marked done by accident.
         function markUndone(id) {
             var btn = document.getElementById("undo-" + id);
             if (btn) { btn.textContent = "..."; btn.disabled = true; }
             xhrJson("PATCH", API_URL + "/tasks/" + id + "/status",
                 { "Authorization": "Bearer " + API_TOKEN, "Content-Type": "application/json" },
-                JSON.stringify({ status: "pending" }),
+                JSON.stringify({ status: "open" }),
                 function () { loadScores(); },
                 function () { if (btn) { btn.textContent = "Undo"; btn.disabled = false; } }
             );
+        }
+
+        // Which kid a task belongs to. Tasks carry assigned_to = null and encode
+        // the child's name in the title, e.g. "Unload Dishwasher (Eli)".
+        // Prefer an explicit assigned_to id; otherwise match the trailing (Name).
+        function kidForTask(t) {
+            for (var i = 0; i < KIDS.length; i++) {
+                if (KIDS[i].id === t.assigned_to) return KIDS[i];
+            }
+            var m = /\(([^)]+)\)\s*$/.exec(t.title || "");
+            if (m) {
+                var name = m[1].trim().toLowerCase();
+                for (var j = 0; j < KIDS.length; j++) {
+                    if (KIDS[j].name.toLowerCase() === name) return KIDS[j];
+                }
+            }
+            return null;
+        }
+
+        // Title with the trailing "(Name)" stripped — the card is already under
+        // the child's name, so repeating it is redundant.
+        function displayTitle(t) {
+            return (t.title || "").replace(/\s*\([^)]*\)\s*$/, "");
         }
 
         // Renders the board from the tasks payload (and current STORE).
@@ -325,17 +348,16 @@
                 todayStart.setHours(0, 0, 0, 0);
                 document.getElementById("error-msg").style.display = "none";
 
-                var kidIds = KIDS.map(function(k) { return k.id; });
-                var kidTasks = tasks.filter(function(t) {
-                    return kidIds.indexOf(t.assigned_to) !== -1;
-                });
+                // Tag each task with its kid up front (handles assigned_to and
+                // the "(Name)" title convention), then group per child.
+                tasks.forEach(function(t) { t._kid = kidForTask(t); });
 
                 var board = document.getElementById("scoreboard");
                 board.innerHTML = "";
 
                 KIDS.forEach(function(kid) {
-                    var mine = kidTasks.filter(function(t) {
-                        return t.assigned_to === kid.id;
+                    var mine = tasks.filter(function(t) {
+                        return t._kid && t._kid.id === kid.id;
                     });
 
                     var weeklyDone = mine.filter(function(t) {
@@ -373,7 +395,7 @@
                     todayOpen.forEach(function(t) {
                         openHtml +=
                             '<div class="task-open">' +
-                                '<span class="task-title">' + t.title +
+                                '<span class="task-title">' + displayTitle(t) +
                                     ' <span class="pts-badge">+' + pointValue(t.title) + '</span></span>' +
                                 '<button class="done-btn" id="btn-' + t.id + '" onclick="markDone(' + t.id + ')">Done!</button>' +
                             '</div>';
@@ -384,7 +406,7 @@
                         doneHtml +=
                             '<div class="task-done">' +
                                 '<span class="task-done-check">✓</span>' +
-                                '<span class="task-done-title">' + t.title + '</span>' +
+                                '<span class="task-done-title">' + displayTitle(t) + '</span>' +
                                 '<button class="undo-btn" id="undo-' + t.id + '" onclick="markUndone(' + t.id + ')">Undo</button>' +
                             '</div>';
                     });
