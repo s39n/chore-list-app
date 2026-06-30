@@ -14,13 +14,14 @@ export function defaultStore() {
 
 // Record a single chore completion (one row per "Done" tap, so repeats count).
 // Points are snapshotted at tap time from the chore's current value. Returns the row.
-export function logCompletion(store, kidId, taskId, title) {
+export function logCompletion(store, kidId, taskId, title, points) {
     if (!store.completions) store.completions = [];
+    const pts = Number.isFinite(Number(points)) ? Number(points) : pointValueFor(store, title);
     const rec = {
         kidId: String(kidId),
         taskId: taskId,
         title: String(title || ""),
-        points: pointValueFor(store, title),
+        points: pts,
         at: new Date().toISOString(),
     };
     store.completions.push(rec);

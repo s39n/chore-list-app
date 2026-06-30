@@ -87,7 +87,7 @@ async function handleStore(req, res, urlPath) {
             return sendJson(res, 400, { error: "kidId and taskId required" });
         }
         const store = loadStore();
-        logCompletion(store, body.kidId, body.taskId, body.title);
+        logCompletion(store, body.kidId, body.taskId, body.title, body.points);
         saveStore(store);
         return sendJson(res, 200, store);
     }

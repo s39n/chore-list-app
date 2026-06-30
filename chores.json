@@ -1,0 +1,28 @@
+{
+  "rotationCadence": "week",
+  "rotationEpoch": "2026-06-29",
+  "defaultPoints": 10,
+  "kids": [
+    { "name": "Amelia", "id": 3, "color": "#dd44ff" },
+    { "name": "Evelyn", "id": 2, "color": "#ff4444" },
+    { "name": "Eli",    "id": 5, "color": "#4488ff" }
+  ],
+  "chores": [
+    { "id": "scoop-coop",   "title": "Scoop Chicken Coop/Run", "points": 10, "rotate": ["Amelia", "Evelyn"], "days": "daily" },
+    { "id": "water-plants", "title": "Water Outside Plants",   "points": 10, "rotate": ["Amelia", "Evelyn"], "days": "daily" },
+    { "id": "set-table",    "title": "Set Table",              "points": 10, "rotate": ["Amelia", "Evelyn"], "days": "daily" },
+    { "id": "clean-bath",   "title": "Clean Bathrooms",        "points": 10, "rotate": ["Amelia", "Evelyn"], "days": ["tue", "fri"] },
+
+    { "id": "collect-eggs", "title": "Collect Eggs",      "points": 10, "rotate": ["Evelyn", "Amelia"], "days": "daily" },
+    { "id": "scoop-litter", "title": "Scoop Litterboxes", "points": 10, "rotate": ["Evelyn", "Amelia"], "days": "daily" },
+    { "id": "clear-table",  "title": "Clear Table",       "points": 10, "rotate": ["Evelyn", "Amelia"], "days": "daily" },
+    { "id": "vacuum",       "title": "Vacuum Downstairs", "points": 10, "rotate": ["Evelyn", "Amelia"], "days": ["tue", "fri"] },
+
+    { "id": "make-bed",      "title": "Make Bed",            "points": 10, "who": "Eli", "days": "daily" },
+    { "id": "clothes-am",    "title": "Put Away Clothes AM", "points": 10, "who": "Eli", "days": "daily" },
+    { "id": "wipe-seats",    "title": "Wipe Dinner Seats",   "points": 10, "who": "Eli", "days": "daily" },
+    { "id": "floor-cleanup", "title": "Floor Cleanup",       "points": 10, "who": "Eli", "days": "daily" },
+    { "id": "dust",          "title": "Dust",                "points": 10, "who": "Eli", "days": ["tue", "fri"] },
+    { "id": "clothes-pm",    "title": "Put Away Clothes PM",  "points": 10, "who": "Eli", "days": "daily" }
+  ]
+}

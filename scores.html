@@ -439,28 +439,73 @@
                 String(d.getDate()).padStart(2, "0");
         }
 
-        // Log one completion (every tap counts toward points). We record it in the
-        // board's own store rather than toggling Oikos status, because Oikos keeps a
-        // single task and has no completion history.
-        function markDone(id) {
-            var info = TASKMAP[id] || {};
-            var btn = document.getElementById("btn-" + id);
+        // ---- Standalone chore config (served as /chores.json) ----------------
+        var CONFIG = null;
+        var DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+        function choreById(id) {
+            var list = (CONFIG && CONFIG.chores) || [];
+            for (var i = 0; i < list.length; i++) {
+                if (String(list[i].id) === String(id)) return list[i];
+            }
+            return null;
+        }
+        function chorePoints(c) {
+            if (c && typeof c.points === "number") return c.points;
+            return (CONFIG && CONFIG.defaultPoints) || 10;
+        }
+        function mondayOf(d) {
+            var x = new Date(d);
+            var day = x.getDay();
+            var diff = day === 0 ? -6 : 1 - day;
+            x.setDate(x.getDate() + diff);
+            x.setHours(0, 0, 0, 0);
+            return x;
+        }
+        function mod(n, m) { return ((n % m) + m) % m; }
+        // Whole weeks since the rotation epoch — drives whose turn it is.
+        function weekIndex() {
+            var ep = (CONFIG && CONFIG.rotationEpoch) ? CONFIG.rotationEpoch : "2026-06-29";
+            return Math.round((getWeekStart() - mondayOf(ep + "T00:00:00")) / (7 * 86400000));
+        }
+        // Which kid-name owns this chore this week; "all" = every kid.
+        function choreAssignee(c, wi) {
+            if (c.who === "all") return "all";
+            if (c.rotate && c.rotate.length) return c.rotate[mod(wi + (c.offset || 0), c.rotate.length)];
+            return c.who || null;
+        }
+        // Does this chore apply today? days = "daily" or e.g. ["tue","fri"].
+        function choreToday(c) {
+            if (!c.days || c.days === "daily") return true;
+            if (Object.prototype.toString.call(c.days) !== "[object Array]") return true;
+            var d = DOW[new Date().getDay()];
+            for (var i = 0; i < c.days.length; i++) {
+                if (String(c.days[i]).toLowerCase() === d) return true;
+            }
+            return false;
+        }
+
+        // Log one completion (every tap counts). Stored in the board's own store,
+        // keyed by chore id + kid.
+        function markDone(choreId, kidId) {
+            var c = choreById(choreId) || {};
+            var btn = document.getElementById("btn-" + kidId + "-" + choreId);
             if (btn) { btn.textContent = "+1"; btn.disabled = true; }
             xhrJson("POST", "/store/complete",
                 { "Content-Type": "application/json" },
-                JSON.stringify({ kidId: info.kidId, taskId: id, title: info.title }),
+                JSON.stringify({ kidId: kidId, taskId: choreId, title: c.title, points: chorePoints(c) }),
                 function () { loadScores(); },
                 function () { if (btn) { btn.textContent = "Done!"; btn.disabled = false; } }
             );
         }
 
         // Undo: remove this kid's most recent completion of the chore.
-        function markUndone(taskId, kidId) {
-            var btn = document.getElementById("undo-" + taskId);
+        function markUndone(choreId, kidId) {
+            var btn = document.getElementById("undo-" + kidId + "-" + choreId);
             if (btn) { btn.textContent = "..."; btn.disabled = true; }
             xhrJson("POST", "/store/uncomplete",
                 { "Content-Type": "application/json" },
-                JSON.stringify({ kidId: kidId, taskId: taskId }),
+                JSON.stringify({ kidId: kidId, taskId: choreId }),
                 function () { loadScores(); },
                 function () { if (btn) { btn.textContent = "Undo"; btn.disabled = false; } }
             );
@@ -526,49 +571,35 @@
             return { text: "", cls: "" };
         }
 
-        // Renders the board from the tasks payload (and current STORE).
-        function render(body) {
-                var tasks = (body && body.data) ? body.data : (body || []);
+        // Builds the board from CONFIG (chores.json) + the completion log in STORE.
+        function render() {
+                if (!CONFIG) return;
                 var weekStart = getWeekStart();
-                var today = todayStr();
                 var todayStart = new Date();
                 todayStart.setHours(0, 0, 0, 0);
+                var wi = weekIndex();
+                var kids = (CONFIG.kids && CONFIG.kids.length) ? CONFIG.kids : KIDS;
                 document.getElementById("error-msg").style.display = "none";
-
-                // Tag each task with its kid up front (handles assigned_to and
-                // the "(Name)" title convention), then group per child.
-                tasks.forEach(function(t) { t._kid = kidForTask(t); });
-
-                // Rebuild the lookup markDone uses to attribute a completion.
-                TASKMAP = {};
-                tasks.forEach(function(t) {
-                    TASKMAP[t.id] = { kidId: (t._kid ? t._kid.id : null), title: t.title };
-                });
 
                 var board = document.getElementById("scoreboard");
                 board.innerHTML = "";
 
-                KIDS.forEach(function(kid) {
-                    var mine = tasks.filter(function(t) {
-                        return t._kid && t._kid.id === kid.id;
+                kids.forEach(function(kid) {
+                    // Chores assigned to this kid that apply today.
+                    var mine = [];
+                    (CONFIG.chores || []).forEach(function(c) {
+                        if (!choreToday(c)) return;
+                        var who = choreAssignee(c, wi);
+                        if (who === "all" || (who && who.toLowerCase() === kid.name.toLowerCase())) mine.push(c);
                     });
 
-                    // Points come from logged completions (every tap counts), not
-                    // from Oikos task status.
                     var balance = (STORE.balances && STORE.balances[String(kid.id)]) || 0;
                     var weeklyPoints = kidPointsSince(kid.id, weekStart);
                     var todayPoints = kidPointsSince(kid.id, todayStart);
 
-                    var todayOpen = mine.filter(function(t) {
-                        if (t.status === "archived") return false;
-                        // Done at least once today -> it moves to the completed tally
-                        // below (tap "+1" there to add another).
-                        if (taskCountToday(kid.id, t.id, todayStart) > 0) return false;
-                        if (t.is_recurring) return true;
-                        // One-off tasks: gone once done; else show if due today/overdue.
-                        if (t.status === "done") return false;
-                        if (t.due_date) return t.due_date.slice(0, 10) <= today;
-                        return false;
+                    // Open = not done yet today; completed ones drop to the tally below.
+                    var openChores = mine.filter(function(c) {
+                        return taskCountToday(kid.id, c.id, todayStart) === 0;
                     });
 
                     var card = document.createElement("div");
@@ -576,20 +607,12 @@
                     card.style.setProperty("--color", kid.color);
 
                     var openHtml = "";
-                    todayOpen.forEach(function(t) {
-                        var lab = taskLabel(t);
-                        var labHtml = lab.text
-                            ? '<span class="task-due' + (lab.cls ? " " + lab.cls : "") + '">' + escHtml(lab.text) + '</span>'
-                            : '';
-                        var n = taskCountToday(kid.id, t.id, todayStart);
-                        var countHtml = n > 0 ? '<span class="done-count">✓' + n + '</span>' : '';
+                    openChores.forEach(function(c) {
                         openHtml +=
                             '<div class="task-open">' +
-                                '<span class="task-title">' + displayTitle(t) +
-                                    ' <span class="pts-badge">+' + pointValue(t.title) + '</span>' +
-                                    labHtml + '</span>' +
-                                countHtml +
-                                '<button class="done-btn" id="btn-' + t.id + '" onclick="markDone(' + t.id + ')">Done!</button>' +
+                                '<span class="task-title">' + escHtml(c.title) +
+                                    ' <span class="pts-badge">+' + chorePoints(c) + '</span></span>' +
+                                '<button class="done-btn" id="btn-' + kid.id + '-' + c.id + '" onclick="markDone(\'' + c.id + '\', ' + kid.id + ')">Done!</button>' +
                             '</div>';
                     });
 
@@ -603,8 +626,8 @@
                                 '<span class="task-done-title">' + escHtml(displayTitle({ title: d.title })) +
                                     (d.count > 1 ? ' <span class="done-times">×' + d.count + '</span>' : '') + '</span>' +
                                 '<span class="done-pts">+' + d.points + '</span>' +
-                                '<button class="again-btn" id="again-' + d.taskId + '" onclick="markDone(' + d.taskId + ')">+1</button>' +
-                                '<button class="undo-btn" id="undo-' + d.taskId + '" onclick="markUndone(' + d.taskId + ', ' + kid.id + ')">Undo</button>' +
+                                '<button class="again-btn" id="again-' + kid.id + '-' + d.taskId + '" onclick="markDone(\'' + d.taskId + '\', ' + kid.id + ')">+1</button>' +
+                                '<button class="undo-btn" id="undo-' + kid.id + '-' + d.taskId + '" onclick="markUndone(\'' + d.taskId + '\', ' + kid.id + ')">Undo</button>' +
                             '</div>';
                     });
 
@@ -640,20 +663,19 @@
         }
 
         function loadScores() {
-            xhrJson("GET", API_URL + "/tasks",
-                { "Authorization": "Bearer " + API_TOKEN, "Content-Type": "application/json" },
-                null,
-                function (tasksBody) {
-                    // Points store is optional — render even if it fails.
+            xhrJson("GET", "/chores.json", null, null,
+                function (cfg) {
+                    if (cfg) { CONFIG = cfg; }
+                    // Points/completions store is optional — render even if it fails.
                     xhrJson("GET", "/store", null, null,
                         function (storeObj) {
                             if (storeObj) { STORE = storeObj; }
                             document.getElementById("error-msg").style.display = "none";
-                            render(tasksBody);
+                            render();
                         },
                         function () {
                             document.getElementById("error-msg").style.display = "none";
-                            render(tasksBody);
+                            render();
                         }
                     );
                 },
@@ -707,7 +729,7 @@
             if (ov) ov.style.display = awake ? "none" : "block";
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v9)…";
+        document.getElementById("last-updated").textContent = "Loading (v10)…";
         loadScores();
         loadCalendar();
         nightCheck();

@@ -7,7 +7,7 @@ WORKDIR /app
 # Copy only what the server needs to run.
 # calendar.json holds today's events for the board's calendar strip; it is
 # regenerated and pushed daily, so each rebuild bakes in the latest events.
-COPY package.json server.js points.js index.js index.html scores.html approve.html calendar.json ./
+COPY package.json server.js points.js index.js index.html scores.html approve.html calendar.json chores.json ./
 
 # Persisted points/balances live here; mount a volume to keep them.
 ENV DATA_DIR=/data
