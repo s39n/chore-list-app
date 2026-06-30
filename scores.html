@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Launch full-screen (no Safari chrome) when added to the iPad Home Screen -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Chore Board">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>Chore Scores</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -864,7 +869,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v13)…";
+        document.getElementById("last-updated").textContent = "Loading (v14)…";
         loadScores();
         loadCalendar();
         loadWeather();
