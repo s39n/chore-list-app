@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { defaultStore, approveWeek, redeemPoints, logCompletion, unlogCompletion,
          bankUnbanked, deleteRedemption, editRedemption,
-         adjustPoints, deleteAdjustment } from "./points.js";
+         adjustPoints, deleteAdjustment, resetPoints } from "./points.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -463,6 +463,14 @@ async function handleStore(req, res, urlPath) {
         if (!kidId || !body.id) return sendJson(res, 400, { error: "kidId and id required" });
         const store = loadStore();
         deleteAdjustment(store, kidId, body.id);
+        saveStore(store);
+        return sendJson(res, 200, store);
+    }
+
+    // POST /store/reset — wipe all points data to zero (parent PIN)
+    if (req.method === "POST" && urlPath === "/store/reset") {
+        const store = loadStore();
+        resetPoints(store);
         saveStore(store);
         return sendJson(res, 200, store);
     }

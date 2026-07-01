@@ -65,6 +65,7 @@
         <h2>Points</h2>
         <div class="sub">Unbanked = earned, not yet approved. Approve moves it to Banked; Redeem spends from Banked.</div>
         <div id="points"></div>
+        <div style="margin:2px 0 8px;"><button class="secondary" onclick="resetAllPoints()" style="font-size:0.78rem;padding:5px 10px;">Reset all points…</button></div>
 
         <h2>Completed tasks</h2>
         <div class="card">
@@ -220,6 +221,11 @@
             var tgt = document.getElementById("adj-tgt-" + kidId).value;
             fetch("/store/adjust", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, points: amt, note: note, target: tgt }) })
                 .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
+        }
+        function resetAllPoints() {
+            if (!confirm("Reset ALL points to zero for every kid?\nThis clears balances, completions, redemptions, and adjustments. Cannot be undone.")) return;
+            fetch("/store/reset", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: "{}" })
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
         }
 
         // ---- Completed-tasks calendar ----

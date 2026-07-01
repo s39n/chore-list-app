@@ -134,6 +134,17 @@ export function adjustPoints(store, kidId, points, note, target) {
     });
     return store;
 }
+// Wipe all points data back to zero (balances, approvals, redemptions,
+// adjustments, completions) — keeps point values / config. Used to clear out
+// test/legacy data and start fresh.
+export function resetPoints(store) {
+    store.balances = {};
+    store.approvals = [];
+    store.redemptions = [];
+    store.adjustments = [];
+    store.completions = [];
+    return store;
+}
 export function deleteAdjustment(store, kidId, aid) {
     const id = String(kidId);
     const arr = store.adjustments || [];
