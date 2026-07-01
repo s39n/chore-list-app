@@ -144,7 +144,7 @@
                 CONFIG = res[1] || { chores: [], defaultPoints: 10 };
             });
         }
-        function refreshData() { if (PIN) loadAll().then(function () { render(); }); }
+        function refreshData() { if (PIN) loadAll().then(function () { renderData(); }); }
         var _autoRefreshOn = false;
         function startAutoRefresh() {
             if (_autoRefreshOn) return;
@@ -153,12 +153,14 @@
             document.addEventListener("visibilitychange", function () { if (!document.hidden) refreshData(); });
         }
 
-        function render() {
+        // Everything EXCEPT the chore editor. Auto-refresh uses this so it never
+        // rebuilds (and wipes) chore edits you haven't saved yet.
+        function renderData() {
             renderPoints();
             renderCalendar();
             renderRedeemHistory();
-            renderChores();
         }
+        function render() { renderData(); renderChores(); }
 
         // ---- Points cards ----
         function renderPoints() {
@@ -189,14 +191,14 @@
         }
         function bankKid(kidId) {
             fetch("/store/bank", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId }) })
-                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
         }
         function redeem(kidId) {
             var amt = Number(document.getElementById("rdm-amt-" + kidId).value);
             var note = document.getElementById("rdm-note-" + kidId).value;
             if (!amt || amt <= 0) return;
             fetch("/store/redeem", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, amount: amt, note: note }) })
-                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
         }
 
         // ---- Completed-tasks calendar ----
@@ -279,11 +281,11 @@
             var amt = Number(card.querySelector(".rh-amt").value);
             var note = card.querySelector(".rh-note").value;
             fetch("/store/redeem/edit", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, id: rid, amount: amt, note: note }) })
-                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
         }
         function delRedeem(kidId, rid) {
             fetch("/store/redeem/delete", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, id: rid }) })
-                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
         }
 
         // ---- Manage chores editor ----
