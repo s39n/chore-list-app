@@ -41,6 +41,23 @@
             text-align: left;
         }
 
+        #refresh-btn {
+            position: fixed;
+            top: 8px;
+            right: 12px;
+            z-index: 50;
+            background: rgba(255,255,255,0.08);
+            color: #9aa;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        #refresh-btn:active { opacity: 0.5; }
+
         #scoreboard {
             display: flex;
             flex-wrap: wrap;
@@ -362,6 +379,7 @@
     </style>
 </head>
 <body>
+    <button id="refresh-btn" onclick="location.reload(true)">↻ Refresh</button>
     <h1>Chore Board</h1>
     <div id="last-updated">Loading...</div>
     <div id="calendar-panel"></div>
@@ -891,7 +909,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v17)…";
+        document.getElementById("last-updated").textContent = "Loading (v18)…";
         loadScores();
         loadCalendar();
         loadWeather();
