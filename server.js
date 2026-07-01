@@ -128,6 +128,157 @@ async function fetchWeather() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Calendar: fetch a Google "secret iCal" feed, compute today's events, cache to
+// the volume. Zero dependencies — a compact iCal parser handles the common cases
+// (all-day + timed events, DAILY/WEEKLY/MONTHLY/YEARLY recurrence, EXDATE, UNTIL).
+// ---------------------------------------------------------------------------
+const CALENDAR_FILE = path.join(DATA_DIR, "calendar.json");
+const CALENDAR_SEED = path.join(__dirname, "calendar.json");
+const CAL_ICS_URL = process.env.CAL_ICS_URL || "";
+const CAL_TZ = process.env.CAL_TZ || "America/Los_Angeles";
+const BYDAY_NUM = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+function ymdOf(dateObj) {
+    const p = new Intl.DateTimeFormat("en-CA", { timeZone: CAL_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(dateObj);
+    const g = (t) => Number((p.find((x) => x.type === t) || {}).value);
+    return { y: g("year"), m: g("month"), d: g("day") };
+}
+function ymdUTC(a) { return Date.UTC(a.y, a.m - 1, a.d); }
+function dowOf(a) { return new Date(ymdUTC(a)).getUTCDay(); }
+function daysBetween(a, b) { return Math.round((ymdUTC(b) - ymdUTC(a)) / 86400000); }
+function sameYmd(a, b) { return a.y === b.y && a.m === b.m && a.d === b.d; }
+function fmt12(hh, mm) { const ap = hh >= 12 ? "PM" : "AM"; let h = hh % 12; if (h === 0) h = 12; return h + ":" + (mm < 10 ? "0" + mm : mm) + " " + ap; }
+
+function unfoldICS(text) {
+    const raw = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    const out = [];
+    for (const line of raw) {
+        if ((line.startsWith(" ") || line.startsWith("\t")) && out.length) out[out.length - 1] += line.slice(1);
+        else out.push(line);
+    }
+    return out;
+}
+function parseDT(params, value) {
+    if (/VALUE=DATE(?!-)/i.test(params) || /^\d{8}$/.test(value)) {
+        return { allDay: true, local: { y: +value.slice(0, 4), m: +value.slice(4, 6), d: +value.slice(6, 8), hh: 0, mm: 0 } };
+    }
+    const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/.exec(value);
+    if (!m) return null;
+    const c = { y: +m[1], m: +m[2], d: +m[3], hh: +m[4], mm: +m[5] };
+    if (m[7] === "Z") {
+        const inst = new Date(Date.UTC(c.y, c.m - 1, c.d, c.hh, c.mm, +m[6]));
+        const p = new Intl.DateTimeFormat("en-CA", { timeZone: CAL_TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(inst);
+        const g = (t) => Number((p.find((x) => x.type === t) || {}).value);
+        let hh = g("hour"); if (hh === 24) hh = 0;
+        return { allDay: false, local: { y: g("year"), m: g("month"), d: g("day"), hh, mm: g("minute") } };
+    }
+    return { allDay: false, local: c }; // TZID or floating: treat as calendar-local
+}
+function parseICS(text) {
+    const lines = unfoldICS(text);
+    const events = [];
+    let cur = null;
+    for (const line of lines) {
+        if (line === "BEGIN:VEVENT") { cur = { exdates: [], rrule: null }; continue; }
+        if (line === "END:VEVENT") { if (cur) events.push(cur); cur = null; continue; }
+        if (!cur) continue;
+        const ci = line.indexOf(":");
+        if (ci < 0) continue;
+        const left = line.slice(0, ci), value = line.slice(ci + 1);
+        const semi = left.indexOf(";");
+        const name = (semi < 0 ? left : left.slice(0, semi)).toUpperCase();
+        const params = semi < 0 ? "" : left.slice(semi + 1);
+        if (name === "SUMMARY") cur.summary = value;
+        else if (name === "STATUS") cur.status = value.toUpperCase();
+        else if (name === "DTSTART") cur.start = parseDT(params, value);
+        else if (name === "RECURRENCE-ID") cur.recurrenceId = parseDT(params, value);
+        else if (name === "EXDATE") value.split(",").forEach((v) => { const p = parseDT(params, v.trim()); if (p) cur.exdates.push(p.local); });
+        else if (name === "RRULE") {
+            const r = { interval: 1, byday: null, until: null, bymonthday: null };
+            value.split(";").forEach((kv) => {
+                const eq = kv.indexOf("="); if (eq < 0) return;
+                const K = kv.slice(0, eq).toUpperCase(), V = kv.slice(eq + 1);
+                if (K === "FREQ") r.freq = V.toUpperCase();
+                else if (K === "INTERVAL") r.interval = parseInt(V, 10) || 1;
+                else if (K === "BYDAY") r.byday = V.split(",").map((x) => BYDAY_NUM[x.slice(-2).toUpperCase()]).filter((n) => n != null);
+                else if (K === "BYMONTHDAY") r.bymonthday = parseInt(V, 10);
+                else if (K === "UNTIL") { const u = /^(\d{4})(\d{2})(\d{2})/.exec(V); if (u) r.until = { y: +u[1], m: +u[2], d: +u[3] }; }
+            });
+            cur.rrule = r;
+        }
+    }
+    return events;
+}
+function occursOn(ev, today) {
+    const s = ev.start.local, s0 = { y: s.y, m: s.m, d: s.d };
+    if (ev.exdates.some((x) => sameYmd(x, today))) return false;
+    if (!ev.rrule) return sameYmd(s0, today);
+    const r = ev.rrule;
+    if (daysBetween(s0, today) < 0) return false;
+    if (r.until && daysBetween(today, r.until) < 0) return false;
+    const iv = r.interval || 1;
+    if (r.freq === "DAILY") return daysBetween(s0, today) % iv === 0;
+    if (r.freq === "WEEKLY") {
+        const days = (r.byday && r.byday.length) ? r.byday : [dowOf(s0)];
+        if (days.indexOf(dowOf(today)) < 0) return false;
+        return Math.floor(daysBetween(s0, today) / 7) % iv === 0;
+    }
+    if (r.freq === "MONTHLY") {
+        const day = (r.bymonthday != null) ? r.bymonthday : s0.d;
+        if (today.d !== day) return false;
+        const months = (today.y - s0.y) * 12 + (today.m - s0.m);
+        return months >= 0 && months % iv === 0;
+    }
+    if (r.freq === "YEARLY") {
+        if (today.m !== s0.m || today.d !== s0.d) return false;
+        return (today.y - s0.y) % iv === 0;
+    }
+    return false;
+}
+function minsOf(start) { return start.allDay ? -1 : start.local.hh * 60 + start.local.mm; }
+function todaysEvents(text, today) {
+    today = today || ymdOf(new Date());
+    const events = parseICS(text);
+    const out = [];
+    for (const ev of events) {
+        if (!ev.start || ev.status === "CANCELLED") continue;
+        const label = ev.start.allDay ? "All day" : fmt12(ev.start.local.hh, ev.start.local.mm);
+        if (ev.recurrenceId) {
+            if (sameYmd(ev.recurrenceId.local, today)) out.push({ time: label, title: ev.summary || "", _s: minsOf(ev.start) });
+            continue;
+        }
+        if (occursOn(ev, today)) out.push({ time: label, title: ev.summary || "", _s: minsOf(ev.start) });
+    }
+    out.sort((a, b) => a._s - b._s);
+    return out.map((e) => ({ time: e.time, title: e.title }));
+}
+async function fetchCalendar() {
+    if (!CAL_ICS_URL) return;
+    try {
+        const r = await fetch(CAL_ICS_URL);
+        if (!r.ok) throw new Error("http " + r.status);
+        const text = await r.text();
+        const t = ymdOf(new Date());
+        const out = {
+            generated: t.y + "-" + String(t.m).padStart(2, "0") + "-" + String(t.d).padStart(2, "0"),
+            events: todaysEvents(text, t)
+        };
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(CALENDAR_FILE, JSON.stringify(out, null, 2));
+        console.log("calendar:", out.events.length, "events today");
+    } catch (e) {
+        console.log("calendar fetch failed:", e.message);
+    }
+}
+function loadCalendarFile() {
+    try { return fs.readFileSync(CALENDAR_FILE, "utf8"); }
+    catch {
+        try { const seed = fs.readFileSync(CALENDAR_SEED, "utf8"); fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(CALENDAR_FILE, seed); return seed; }
+        catch { return JSON.stringify({ generated: "", events: [] }); }
+    }
+}
+
 // GET /chores.json (open) returns the config; PUT /chores (parent PIN) saves it.
 async function handleChores(req, res) {
     if (req.method === "GET") {
@@ -306,6 +457,13 @@ http.createServer((req, res) => {
         return;
     }
 
+    // Today's calendar events (served from the volume; refreshed from the iCal feed)
+    if (req.url.split("?")[0] === "/calendar.json") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(loadCalendarFile());
+        return;
+    }
+
     // Serve static files
     // Strip query/hash, decode percent-escapes, and normalize before joining
     let urlPath;
@@ -347,3 +505,18 @@ http.createServer((req, res) => {
     }
 })();
 setInterval(fetchWeather, 60 * 60 * 1000);
+
+// Same for the calendar feed — only if a secret iCal URL is configured.
+if (CAL_ICS_URL) {
+    (async function () {
+        for (let i = 0; i < 6; i++) {
+            await fetchCalendar();
+            try {
+                const c = JSON.parse(fs.readFileSync(CALENDAR_FILE, "utf8"));
+                if (c && c.generated) break;
+            } catch { /* not written yet — retry */ }
+            await new Promise((r) => setTimeout(r, 15000));
+        }
+    })();
+    setInterval(fetchCalendar, 60 * 60 * 1000);
+}
