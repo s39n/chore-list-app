@@ -570,7 +570,12 @@
         // Whole weeks since the rotation epoch — drives whose turn it is.
         function weekIndex() {
             var ep = (CONFIG && CONFIG.rotationEpoch) ? CONFIG.rotationEpoch : "2026-06-29";
-            return Math.round((getWeekStart() - mondayOf(ep + "T00:00:00")) / (7 * 86400000));
+            var p = String(ep).split("-");
+            // Build a LOCAL midnight date from the parts. Old iPad Safari parses
+            // "2026-06-29T00:00:00" as UTC, which shifted the week back one and
+            // flipped the whole rotation on the tablet only.
+            var epDate = new Date(+p[0], (+p[1] || 1) - 1, (+p[2] || 1));
+            return Math.round((getWeekStart() - mondayOf(epDate)) / (7 * 86400000));
         }
         // Which kid-name owns this chore this week; "all" = every kid.
         function choreAssignee(c, wi) {
@@ -909,7 +914,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v18)…";
+        document.getElementById("last-updated").textContent = "Loading (v19)…";
         loadScores();
         loadCalendar();
         loadWeather();
