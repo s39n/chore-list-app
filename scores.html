@@ -437,12 +437,28 @@
         // taskId -> { kidId, title }, rebuilt each render so markDone knows who/what.
         var TASKMAP = {};
 
+        // Old iPad Safari mis-parses some ISO strings (Invalid Date), which made a
+        // chore appear as BOTH open and completed. Parse the UTC timestamp by hand,
+        // and route every "is it since X" check through one shared test so the open
+        // list and the completed tally can never disagree.
+        function atMs(s) {
+            var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(String(s || ""));
+            if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+            var d = new Date(s);
+            return isNaN(d) ? NaN : d.getTime();
+        }
+        function atSince(s, sinceMs) {
+            var t = atMs(s);
+            return !isNaN(t) && t >= sinceMs;
+        }
+
         // Points a kid has earned (from logged completions) at or after `since`.
         function kidPointsSince(kidId, since) {
             var list = STORE.completions || [];
+            var sinceMs = since.getTime();
             var sum = 0;
             for (var i = 0; i < list.length; i++) {
-                if (String(list[i].kidId) === String(kidId) && new Date(list[i].at) >= since) {
+                if (String(list[i].kidId) === String(kidId) && atSince(list[i].at, sinceMs)) {
                     sum += (list[i].points || 0);
                 }
             }
@@ -451,22 +467,24 @@
         // How many times a kid completed a given chore today.
         function taskCountToday(kidId, taskId, todayStart) {
             var list = STORE.completions || [];
+            var sinceMs = todayStart.getTime();
             var n = 0;
             for (var i = 0; i < list.length; i++) {
                 if (String(list[i].kidId) === String(kidId) &&
                     String(list[i].taskId) === String(taskId) &&
-                    new Date(list[i].at) >= todayStart) n++;
+                    atSince(list[i].at, sinceMs)) n++;
             }
             return n;
         }
         // Today's completions for a kid, grouped per chore: [{taskId,title,count,points}].
         function kidCompletionsToday(kidId, todayStart) {
             var list = STORE.completions || [];
+            var sinceMs = todayStart.getTime();
             var map = {}, order = [];
             for (var i = 0; i < list.length; i++) {
                 var c = list[i];
                 if (String(c.kidId) !== String(kidId)) continue;
-                if (new Date(c.at) < todayStart) continue;
+                if (!atSince(c.at, sinceMs)) continue;
                 var k = String(c.taskId);
                 if (!map[k]) { map[k] = { taskId: c.taskId, title: c.title, count: 0, points: 0 }; order.push(k); }
                 map[k].count++;
@@ -873,7 +891,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v16)…";
+        document.getElementById("last-updated").textContent = "Loading (v17)…";
         loadScores();
         loadCalendar();
         loadWeather();
