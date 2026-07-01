@@ -501,6 +501,18 @@ http.createServer((req, res) => {
         return;
     }
 
+    // POST /chores/reset — overwrite the volume config with the shipped defaults (PIN)
+    if (req.url.split("?")[0] === "/chores/reset" && req.method === "POST") {
+        if (!authorized(req)) { sendJson(res, 401, { error: "bad or missing parent PIN" }); return; }
+        try {
+            const seed = fs.readFileSync(CHORES_SEED, "utf8");
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+            fs.writeFileSync(CHORES_FILE, seed);
+            sendJson(res, 200, JSON.parse(seed));
+        } catch (e) { sendJson(res, 500, { error: "reset failed" }); }
+        return;
+    }
+
     // Chore config (served from the data volume; parents edit it via PUT /chores)
     if (req.url.split("?")[0] === "/chores.json" || req.url.split("?")[0] === "/chores") {
         handleChores(req, res).catch(() => sendJson(res, 500, { error: "chores error" }));

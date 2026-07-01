@@ -91,6 +91,7 @@
         <div style="margin:10px 0 28px;">
             <button class="secondary" onclick="addChore()">+ Add chore</button>
             <button onclick="saveChores()">Save chores</button>
+            <button class="secondary" onclick="resetChores()" style="font-size:0.8rem;">Reset to defaults</button>
             <span id="chores-saved" class="approved" style="display:none;">Saved ✓</span>
             <div id="chores-err" class="err"></div>
         </div>
@@ -418,6 +419,19 @@
                 out.push(c);
             });
             return out;
+        }
+        function resetChores(){
+            if (!confirm("Reset the chore list to the built-in defaults? This replaces your current chores.")) return;
+            fetch("/chores/reset", { method: "POST", headers: { "x-parent-pin": PIN } })
+                .then(function(r){ if (r.status === 401) { document.getElementById("chores-err").textContent = "Wrong PIN"; return null; } return r.json(); })
+                .then(function(cfg){
+                    if (!cfg) return;
+                    CONFIG = cfg;
+                    renderChores();
+                    var t = document.getElementById("chores-saved");
+                    t.textContent = "Reset ✓"; t.style.display = "inline";
+                    setTimeout(function(){ t.style.display = "none"; t.textContent = "Saved ✓"; }, 1500);
+                });
         }
         function saveChores(){
             var errEl = document.getElementById("chores-err");

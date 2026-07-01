@@ -13,10 +13,10 @@
     { "id": "set-table",    "title": "Set Table",              "points": 10, "rotate": ["Amelia", "Evelyn"], "days": "daily" },
     { "id": "clean-bath",   "title": "Clean Bathrooms",        "points": 10, "rotate": ["Amelia", "Evelyn"], "days": ["tue", "fri"] },
 
-    { "id": "collect-eggs", "title": "Collect Eggs",      "points": 10, "rotate": ["Evelyn", "Amelia"], "days": "daily" },
-    { "id": "scoop-litter", "title": "Scoop Litterboxes", "points": 10, "rotate": ["Evelyn", "Amelia"], "days": "daily" },
-    { "id": "clear-table",  "title": "Clear Table",       "points": 10, "rotate": ["Evelyn", "Amelia"], "days": "daily" },
-    { "id": "vacuum",       "title": "Vacuum Downstairs", "points": 10, "rotate": ["Evelyn", "Amelia"], "days": ["tue", "fri"] },
+    { "id": "collect-eggs", "title": "Collect Eggs",      "points": 10, "rotate": ["Amelia", "Evelyn"], "offset": 1, "days": "daily" },
+    { "id": "scoop-litter", "title": "Scoop Litterboxes", "points": 10, "rotate": ["Amelia", "Evelyn"], "offset": 1, "days": "daily" },
+    { "id": "clear-table",  "title": "Clear Table",       "points": 10, "rotate": ["Amelia", "Evelyn"], "offset": 1, "days": "daily" },
+    { "id": "vacuum",       "title": "Vacuum Downstairs", "points": 10, "rotate": ["Amelia", "Evelyn"], "offset": 1, "days": ["tue", "fri"] },
 
     { "id": "make-bed",      "title": "Make Bed",            "points": 10, "who": "Eli", "days": "daily" },
     { "id": "clothes-am",    "title": "Put Away Clothes AM", "points": 10, "who": "Eli", "days": "daily" },
