@@ -9,6 +9,7 @@ export function defaultStore() {
         approvals: [],         // { weekStart, kidId, points, approvedAt }
         redemptions: [],       // { kidId, amount, note, at }
         completions: [],       // { kidId, taskId, title, points, at } — one per "Done" tap
+        adjustments: [],       // { kidId, points(±), target, note, at } — manual bonus/penalty
     };
 }
 
@@ -106,10 +107,42 @@ export function totalRedeemed(store, kidId) {
     return (store.redemptions || []).filter(r => String(r.kidId) === id)
         .reduce((s, r) => s + (r.amount || 0), 0);
 }
+export function totalAdjustments(store, kidId) {
+    const id = String(kidId);
+    return (store.adjustments || []).filter(a => String(a.kidId) === id)
+        .reduce((s, a) => s + (a.points || 0), 0);
+}
 export function unbankedPoints(store, kidId) {
     const id = String(kidId);
     const balance = (store.balances && store.balances[id]) || 0;
-    return totalEarned(store, id) - balance - totalRedeemed(store, id);
+    return totalEarned(store, id) + totalAdjustments(store, id) - balance - totalRedeemed(store, id);
+}
+
+// Manual bonus/penalty. target "banked" changes the balance directly (and is
+// recorded so unbanked stays put); target "unbanked" only shifts the unbanked
+// bucket. Positive adds, negative takes away (e.g. discipline).
+export function adjustPoints(store, kidId, points, note, target) {
+    const id = String(kidId);
+    const amt = Number(points);
+    if (!Number.isFinite(amt) || amt === 0) return store;
+    if (!store.adjustments) store.adjustments = [];
+    const tgt = target === "unbanked" ? "unbanked" : "banked";
+    if (tgt === "banked") store.balances[id] = ((store.balances && store.balances[id]) || 0) + amt;
+    store.adjustments.push({
+        id: "a" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+        kidId: id, points: amt, target: tgt, note: String(note || ""), at: new Date().toISOString()
+    });
+    return store;
+}
+export function deleteAdjustment(store, kidId, aid) {
+    const id = String(kidId);
+    const arr = store.adjustments || [];
+    const i = arr.findIndex(a => String(a.kidId) === id && (a.id === aid || a.at === aid));
+    if (i >= 0) {
+        if (arr[i].target === "banked") store.balances[id] = ((store.balances && store.balances[id]) || 0) - (arr[i].points || 0);
+        arr.splice(i, 1);
+    }
+    return store;
 }
 // Move all of a kid's unbanked points into their banked balance.
 export function bankUnbanked(store, kidId) {

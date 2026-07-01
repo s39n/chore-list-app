@@ -3,7 +3,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { defaultStore, approveWeek, redeemPoints, logCompletion, unlogCompletion,
-         bankUnbanked, deleteRedemption, editRedemption } from "./points.js";
+         bankUnbanked, deleteRedemption, editRedemption,
+         adjustPoints, deleteAdjustment } from "./points.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -440,6 +441,28 @@ async function handleStore(req, res, urlPath) {
         if (!kidId || !body.id) return sendJson(res, 400, { error: "kidId and id required" });
         const store = loadStore();
         editRedemption(store, kidId, body.id, body.amount, body.note);
+        saveStore(store);
+        return sendJson(res, 200, store);
+    }
+
+    // POST /store/adjust — manual bonus/penalty ({ kidId, points(±), note, target })
+    if (req.method === "POST" && urlPath === "/store/adjust") {
+        const kidId = String(body.kidId || "");
+        if (!kidId || !Number.isFinite(Number(body.points))) {
+            return sendJson(res, 400, { error: "kidId and numeric points required" });
+        }
+        const store = loadStore();
+        adjustPoints(store, kidId, body.points, body.note, body.target);
+        saveStore(store);
+        return sendJson(res, 200, store);
+    }
+
+    // POST /store/adjust/delete — remove an adjustment (reverses its effect)
+    if (req.method === "POST" && urlPath === "/store/adjust/delete") {
+        const kidId = String(body.kidId || "");
+        if (!kidId || !body.id) return sendJson(res, 400, { error: "kidId and id required" });
+        const store = loadStore();
+        deleteAdjustment(store, kidId, body.id);
         saveStore(store);
         return sendJson(res, 200, store);
     }

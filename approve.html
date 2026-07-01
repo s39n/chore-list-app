@@ -80,6 +80,10 @@
         <h2>Redeem history</h2>
         <div id="redeem-history"></div>
 
+        <h2>Adjustments</h2>
+        <div class="sub">Manual bonuses and discipline penalties. Delete to reverse one.</div>
+        <div id="adjust-history"></div>
+
         <h2>Manage chores</h2>
         <div class="sub">Add, edit, or remove chores. Saving updates the board and this page for everyone.</div>
         <div id="chore-editor"></div>
@@ -112,8 +116,9 @@
         // ---- Running points model (mirrors points.js) ----
         function totalEarned(id){ return (store.completions||[]).filter(function(c){return String(c.kidId)===String(id);}).reduce(function(s,c){return s+(c.points||0);},0); }
         function totalRedeemed(id){ return (store.redemptions||[]).filter(function(r){return String(r.kidId)===String(id);}).reduce(function(s,r){return s+(r.amount||0);},0); }
+        function totalAdjust(id){ return (store.adjustments||[]).filter(function(a){return String(a.kidId)===String(id);}).reduce(function(s,a){return s+(a.points||0);},0); }
         function banked(id){ return (store.balances && store.balances[String(id)]) || 0; }
-        function unbanked(id){ return totalEarned(id) - banked(id) - totalRedeemed(id); }
+        function unbanked(id){ return totalEarned(id) + totalAdjust(id) - banked(id) - totalRedeemed(id); }
 
         function unlock() {
             PIN = document.getElementById("pin").value;
@@ -159,6 +164,7 @@
             renderPoints();
             renderCalendar();
             renderRedeemHistory();
+            renderAdjustHistory();
         }
         function render() { renderData(); renderChores(); }
 
@@ -185,6 +191,12 @@
                         '<input type="number" id="rdm-amt-' + kid.id + '" placeholder="amount" min="1">' +
                         '<input type="text" id="rdm-note-' + kid.id + '" placeholder="reward (e.g. screen time)">' +
                         '<button class="secondary" onclick="redeem(' + kid.id + ')">Redeem</button>' +
+                    '</div>' +
+                    '<div class="redeem-row">' +
+                        '<input type="number" id="adj-amt-' + kid.id + '" placeholder="+/- points">' +
+                        '<input type="text" id="adj-note-' + kid.id + '" placeholder="reason (e.g. discipline)">' +
+                        '<select id="adj-tgt-' + kid.id + '" style="padding:8px;border:1px solid #ccc;border-radius:8px;font-size:0.9rem;"><option value="banked">Banked</option><option value="unbanked">Unbanked</option></select>' +
+                        '<button class="secondary" onclick="adjust(' + kid.id + ')">Apply</button>' +
                     '</div>';
                 box.appendChild(card);
             });
@@ -198,6 +210,15 @@
             var note = document.getElementById("rdm-note-" + kidId).value;
             if (!amt || amt <= 0) return;
             fetch("/store/redeem", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, amount: amt, note: note }) })
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
+        }
+
+        function adjust(kidId) {
+            var amt = Number(document.getElementById("adj-amt-" + kidId).value);
+            if (!amt) return;
+            var note = document.getElementById("adj-note-" + kidId).value;
+            var tgt = document.getElementById("adj-tgt-" + kidId).value;
+            fetch("/store/adjust", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, points: amt, note: note, target: tgt }) })
                 .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
         }
 
@@ -285,6 +306,35 @@
         }
         function delRedeem(kidId, rid) {
             fetch("/store/redeem/delete", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, id: rid }) })
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
+        }
+
+        // ---- Adjustments history (bonuses / discipline) ----
+        function renderAdjustHistory() {
+            var box = document.getElementById("adjust-history");
+            box.innerHTML = "";
+            var adjs = (store.adjustments || []).slice().sort(function (a, b) { return new Date(b.at) - new Date(a.at); });
+            if (!adjs.length) { box.innerHTML = '<div class="card muted">No adjustments yet.</div>'; return; }
+            adjs.forEach(function (a) {
+                var aid = a.id || a.at;
+                var d = new Date(a.at);
+                var ds = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+                var sign = (a.points >= 0 ? "+" : "") + a.points;
+                var col = a.points >= 0 ? "#1a8f3c" : "#c0392b";
+                var card = document.createElement("div");
+                card.className = "card";
+                card.innerHTML =
+                    '<div class="row">' +
+                        '<div><div style="font-weight:700;color:' + esc(kidColor(a.kidId)) + '">' + esc(kidName(a.kidId)) +
+                            ' <span style="color:' + col + '">' + sign + ' pts</span> <span class="muted">(' + esc(a.target || "banked") + ')</span></div>' +
+                            '<div class="muted">' + esc(a.note || "") + ' &middot; ' + esc(ds) + '</div></div>' +
+                        '<button class="secondary" onclick="delAdjust(' + a.kidId + ',\'' + esc(aid) + '\')">Delete</button>' +
+                    '</div>';
+                box.appendChild(card);
+            });
+        }
+        function delAdjust(kidId, aid) {
+            fetch("/store/adjust/delete", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, id: aid }) })
                 .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
         }
 
