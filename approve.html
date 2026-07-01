@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parent Approval</title>
+    <title>Parent Admin</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
             background: #f4f5f7; color: #1a1a2e; padding: 20px; max-width: 760px; margin: 0 auto;
         }
-        h1 { font-size: 1.4rem; margin-bottom: 4px; }
+        h1 { font-size: 1.4rem; }
         h2 { font-size: 1.05rem; margin: 24px 0 10px; color: #333; }
         .sub { color: #777; font-size: 0.85rem; margin-bottom: 8px; }
         .card { background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
@@ -21,15 +21,26 @@
         input[type=text]   { padding: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 0.95rem; flex: 1; }
         button { background: #2d6cdf; color: #fff; border: none; border-radius: 8px; padding: 10px 16px; font-size: 0.95rem; font-weight: 700; cursor: pointer; }
         button.secondary { background: #6b7280; }
-        button:disabled { opacity: 0.5; cursor: default; }
-        .pv-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
-        .pv-row span { flex: 1; }
+        button:disabled { opacity: 0.45; cursor: default; }
+        .err { color: #c0392b; font-size: 0.85rem; margin-top: 6px; }
         .approved { color: #1a8f3c; font-weight: 700; font-size: 0.85rem; }
-        .balance { font-size: 1.3rem; font-weight: 800; color: #2d6cdf; }
         #gate { text-align: center; padding-top: 60px; }
         #gate input { text-align: center; letter-spacing: 6px; font-size: 1.5rem; width: 160px; }
-        .err { color: #c0392b; font-size: 0.85rem; margin-top: 6px; }
         .redeem-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+        .buckets { display: flex; gap: 22px; }
+        .bucket { text-align: center; }
+        .bucket .n { font-size: 1.7rem; font-weight: 800; line-height: 1; }
+        .bucket .l { font-size: 0.65rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+        .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .cal .dow { font-size: 0.7rem; color: #888; text-align: center; padding: 2px 0; }
+        .cal .day { background: #eef1f5; border-radius: 8px; min-height: 50px; padding: 4px 6px; cursor: pointer; position: relative; font-size: 0.8rem; color: #333; }
+        .cal .day.empty { background: transparent; cursor: default; }
+        .cal .day.sel { outline: 2px solid #2d6cdf; }
+        .cal .day .cnt { position: absolute; bottom: 4px; right: 5px; background: #2d6cdf; color: #fff; border-radius: 10px; font-size: 0.68rem; padding: 1px 6px; font-weight: 700; }
+        .pv-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+        .pv-row span:first-child { flex: 1; }
+        .rh-note { flex: 1; }
         .chore-edit .row { flex-wrap: wrap; gap: 8px; }
         .day-lbl { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; }
         label { font-size: 0.9rem; }
@@ -46,18 +57,28 @@
     </div>
 
     <div id="app" style="display:none;">
-        <h1>Parent Approval</h1>
-        <div class="row" style="justify-content:flex-start;gap:12px;">
-            <div class="sub" id="week-label"></div>
-            <button class="secondary" onclick="refreshData()" style="padding:4px 10px;font-size:0.8rem;">Refresh</button>
+        <div class="row" style="justify-content:space-between;">
+            <h1>Parent Admin</h1>
+            <button class="secondary" onclick="refreshData()" style="padding:6px 12px;font-size:0.8rem;">Refresh</button>
         </div>
 
-        <h2>Approve this week</h2>
-        <div class="sub">Review each kid's earned points, adjust if needed, then approve to bank them.</div>
-        <div id="approvals"></div>
+        <h2>Points</h2>
+        <div class="sub">Unbanked = earned, not yet approved. Approve moves it to Banked; Redeem spends from Banked.</div>
+        <div id="points"></div>
 
-        <h2>Banked balances</h2>
-        <div id="balances"></div>
+        <h2>Completed tasks</h2>
+        <div class="card">
+            <div class="cal-head">
+                <button class="secondary" onclick="calMove(-1)">◀</button>
+                <div id="cal-title" style="font-weight:800;"></div>
+                <button class="secondary" onclick="calMove(1)">▶</button>
+            </div>
+            <div id="cal-grid" class="cal"></div>
+            <div id="cal-detail" style="margin-top:12px;"></div>
+        </div>
+
+        <h2>Redeem history</h2>
+        <div id="redeem-history"></div>
 
         <h2>Manage chores</h2>
         <div class="sub">Add, edit, or remove chores. Saving updates the board and this page for everyone.</div>
@@ -71,46 +92,37 @@
     </div>
 
     <script>
-        var API_URL = "/api/v1";
-        var API_TOKEN = "oikos_rUikei0NSSZt-S2zzI5KFPO6cMPADFN8UCYb_VawtJo";
         var KIDS = [
-            { id: 2, name: "Evelyn" },
-            { id: 3, name: "Amelia" },
-            { id: 5, name: "Eli" }
+            { id: 2, name: "Evelyn", color: "#e14b4b" },
+            { id: 3, name: "Amelia", color: "#c44bd8" },
+            { id: 5, name: "Eli",    color: "#3f7fe0" }
         ];
-
         var PIN = "";
         var store = null;
         var CONFIG = { chores: [], defaultPoints: 10 };
+        var calMonth = null;
+        var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-        function getWeekStart() {
-            var now = new Date();
-            var day = now.getDay();
-            var diff = day === 0 ? -6 : 1 - day;
-            var monday = new Date(now);
-            monday.setDate(now.getDate() + diff);
-            monday.setHours(0, 0, 0, 0);
-            return monday;
-        }
-        function ymd(d) {
-            return d.getFullYear() + "-" +
-                String(d.getMonth() + 1).padStart(2, "0") + "-" +
-                String(d.getDate()).padStart(2, "0");
-        }
-        function pointValue(title) {
-            if (store.pointValues && store.pointValues.hasOwnProperty(title)) return store.pointValues[title];
-            return store.defaultPoints;
-        }
+        function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+        function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+        function kidsList(){ return (CONFIG.kids && CONFIG.kids.length) ? CONFIG.kids : KIDS; }
+        function kidName(id){ var k = kidsList().filter(function(x){ return String(x.id)===String(id); })[0]; return k ? k.name : ("Kid "+id); }
+        function kidColor(id){ var k = kidsList().filter(function(x){ return String(x.id)===String(id); })[0]; return (k && k.color) || "#2d6cdf"; }
+
+        // ---- Running points model (mirrors points.js) ----
+        function totalEarned(id){ return (store.completions||[]).filter(function(c){return String(c.kidId)===String(id);}).reduce(function(s,c){return s+(c.points||0);},0); }
+        function totalRedeemed(id){ return (store.redemptions||[]).filter(function(r){return String(r.kidId)===String(id);}).reduce(function(s,r){return s+(r.amount||0);},0); }
+        function banked(id){ return (store.balances && store.balances[String(id)]) || 0; }
+        function unbanked(id){ return totalEarned(id) - banked(id) - totalRedeemed(id); }
 
         function unlock() {
             PIN = document.getElementById("pin").value;
             if (!PIN) { document.getElementById("gate-err").textContent = "Enter a PIN"; return; }
-            // Verify by attempting a harmless authorized write (re-save current points config).
             loadAll().then(function () {
                 return fetch("/store/points", {
                     method: "PUT",
                     headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
-                    body: JSON.stringify({ defaultPoints: store.defaultPoints, pointValues: store.pointValues })
+                    body: JSON.stringify({ defaultPoints: store.defaultPoints, pointValues: store.pointValues || {} })
                 });
             }).then(function (r) {
                 if (r.status === 401) { document.getElementById("gate-err").textContent = "Wrong PIN"; return; }
@@ -132,13 +144,7 @@
                 CONFIG = res[1] || { chores: [], defaultPoints: 10 };
             });
         }
-
-        // Re-pull store + config and re-render (used by the Refresh button and
-        // whenever the parent switches back to this tab).
-        function refreshData() {
-            if (!PIN) return;
-            loadAll().then(function () { render(); });
-        }
+        function refreshData() { if (PIN) loadAll().then(function () { render(); }); }
         var _autoRefreshOn = false;
         function startAutoRefresh() {
             if (_autoRefreshOn) return;
@@ -147,99 +153,142 @@
             document.addEventListener("visibilitychange", function () { if (!document.hidden) refreshData(); });
         }
 
-        // A kid's logged completions this week → { count, points }. Same source
-        // the board uses, so the numbers line up exactly.
-        function kidWeekly(kidId, weekStart) {
-            var list = (store.completions || []).filter(function (c) {
-                return String(c.kidId) === String(kidId) && new Date(c.at) >= weekStart;
-            });
-            var pts = list.reduce(function (s, c) { return s + (c.points || 0); }, 0);
-            return { count: list.length, points: pts };
+        function render() {
+            renderPoints();
+            renderCalendar();
+            renderRedeemHistory();
+            renderChores();
         }
 
-        function render() {
-            var weekStart = getWeekStart();
-            var wkKey = ymd(weekStart);
-            document.getElementById("week-label").textContent = "Week starting Monday " + wkKey;
-
-            // --- Approvals ---
-            var ap = document.getElementById("approvals");
-            ap.innerHTML = "";
-            KIDS.forEach(function (kid) {
-                var w = kidWeekly(kid.id, weekStart);
-                var earned = w.points;
-                var prior = (store.approvals || []).find(function (a) {
-                    return a.kidId === String(kid.id) && a.weekStart === wkKey;
-                });
-
+        // ---- Points cards ----
+        function renderPoints() {
+            var box = document.getElementById("points");
+            box.innerHTML = "";
+            kidsList().forEach(function (kid) {
+                var ub = unbanked(kid.id), bk = banked(kid.id), color = kid.color || "#2d6cdf";
                 var card = document.createElement("div");
                 card.className = "card";
                 card.innerHTML =
                     '<div class="row">' +
-                        '<div><div class="kid-name">' + kid.name + '</div>' +
-                            '<div class="muted">' + w.count + ' completions &middot; ' + earned + ' pts earned</div>' +
-                            (prior ? '<div class="approved">Approved: ' + prior.points + ' pts</div>' : '') +
+                        '<div class="kid-name" style="color:' + esc(color) + '">' + esc(kid.name) + '</div>' +
+                        '<div class="buckets">' +
+                            '<div class="bucket"><div class="n">' + ub + '</div><div class="l">Unbanked</div></div>' +
+                            '<div class="bucket"><div class="n" style="color:' + esc(color) + '">' + bk + '</div><div class="l">Banked</div></div>' +
                         '</div>' +
-                        '<div class="row" style="gap:8px;">' +
-                            '<input type="number" id="appr-' + kid.id + '" value="' + (prior ? prior.points : earned) + '">' +
-                            '<button onclick="approve(' + kid.id + ',\'' + wkKey + '\')">' +
-                                (prior ? 'Update' : 'Approve') + '</button>' +
-                        '</div>' +
-                    '</div>';
-                ap.appendChild(card);
-            });
-
-            // --- Balances ---
-            var bal = document.getElementById("balances");
-            bal.innerHTML = "";
-            KIDS.forEach(function (kid) {
-                var b = (store.balances && store.balances[String(kid.id)]) || 0;
-                var card = document.createElement("div");
-                card.className = "card";
-                card.innerHTML =
-                    '<div class="row">' +
-                        '<div class="kid-name">' + kid.name + '</div>' +
-                        '<div class="balance">' + b + ' pts</div>' +
+                    '</div>' +
+                    '<div class="redeem-row" style="margin-top:12px;">' +
+                        '<button onclick="bankKid(' + kid.id + ')"' + (ub > 0 ? '' : ' disabled') + '>Approve' + (ub > 0 ? ' ' + ub + ' pts' : '') + '</button>' +
                     '</div>' +
                     '<div class="redeem-row">' +
                         '<input type="number" id="rdm-amt-' + kid.id + '" placeholder="amount" min="1">' +
                         '<input type="text" id="rdm-note-' + kid.id + '" placeholder="reward (e.g. screen time)">' +
                         '<button class="secondary" onclick="redeem(' + kid.id + ')">Redeem</button>' +
                     '</div>';
-                bal.appendChild(card);
+                box.appendChild(card);
             });
-
-            // --- Manage chores ---
-            renderChores();
         }
-
-        function approve(kidId, wkKey) {
-            var pts = Number(document.getElementById("appr-" + kidId).value);
-            fetch("/store/approve", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
-                body: JSON.stringify({ kidId: kidId, weekStart: wkKey, points: pts })
-            }).then(function (r) { return r.json(); })
-              .then(function (s) { store = s; render(); });
+        function bankKid(kidId) {
+            fetch("/store/bank", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId }) })
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
         }
-
         function redeem(kidId) {
             var amt = Number(document.getElementById("rdm-amt-" + kidId).value);
             var note = document.getElementById("rdm-note-" + kidId).value;
             if (!amt || amt <= 0) return;
-            fetch("/store/redeem", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
-                body: JSON.stringify({ kidId: kidId, amount: amt, note: note })
-            }).then(function (r) { return r.json(); })
-              .then(function (s) { store = s; render(); });
+            fetch("/store/redeem", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, amount: amt, note: note }) })
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
         }
 
-        // ---- Manage chores editor -------------------------------------------
-        function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+        // ---- Completed-tasks calendar ----
+        function completionsByDate() {
+            var map = {};
+            (store.completions || []).forEach(function (c) {
+                var key = ymd(new Date(c.at));
+                (map[key] = map[key] || []).push(c);
+            });
+            return map;
+        }
+        function calMove(delta) {
+            calMonth.m += delta;
+            if (calMonth.m < 0) { calMonth.m = 11; calMonth.y--; }
+            if (calMonth.m > 11) { calMonth.m = 0; calMonth.y++; }
+            renderCalendar();
+        }
+        function renderCalendar() {
+            if (!calMonth) { var n = new Date(); calMonth = { y: n.getFullYear(), m: n.getMonth() }; }
+            document.getElementById("cal-title").textContent = MONTHS[calMonth.m] + " " + calMonth.y;
+            var map = completionsByDate();
+            var startDow = new Date(calMonth.y, calMonth.m, 1).getDay();
+            var daysInMonth = new Date(calMonth.y, calMonth.m + 1, 0).getDate();
+            var grid = document.getElementById("cal-grid");
+            grid.innerHTML = "";
+            ["S","M","T","W","T","F","S"].forEach(function (d) { var el = document.createElement("div"); el.className = "dow"; el.textContent = d; grid.appendChild(el); });
+            for (var i = 0; i < startDow; i++) { var e = document.createElement("div"); e.className = "day empty"; grid.appendChild(e); }
+            for (var day = 1; day <= daysInMonth; day++) {
+                var key = calMonth.y + "-" + String(calMonth.m + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+                var cnt = (map[key] || []).length;
+                var cell = document.createElement("div");
+                cell.className = "day";
+                cell.setAttribute("data-key", key);
+                cell.innerHTML = '<span>' + day + '</span>' + (cnt ? '<span class="cnt">' + cnt + '</span>' : '');
+                cell.onclick = (function (k) { return function () { showDay(k); }; })(key);
+                grid.appendChild(cell);
+            }
+            document.getElementById("cal-detail").innerHTML = "";
+        }
+        function showDay(key) {
+            var cells = document.querySelectorAll('#cal-grid .day[data-key]');
+            for (var i = 0; i < cells.length; i++) cells[i].className = (cells[i].getAttribute("data-key") === key) ? "day sel" : "day";
+            var list = (completionsByDate()[key] || []).slice().sort(function (a, b) { return new Date(a.at) - new Date(b.at); });
+            var html = '<div class="card"><div style="font-weight:800;margin-bottom:6px;">' + esc(key) + '</div>';
+            if (!list.length) html += '<div class="muted">No tasks completed.</div>';
+            else list.forEach(function (c) {
+                var tm = new Date(c.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+                html += '<div class="pv-row"><span style="color:' + esc(kidColor(c.kidId)) + ';font-weight:600;">' + esc(kidName(c.kidId)) + '</span><span>' + esc(c.title || "") + '</span><span class="muted">' + esc(tm) + '</span><strong>+' + (c.points || 0) + '</strong></div>';
+            });
+            html += '</div>';
+            document.getElementById("cal-detail").innerHTML = html;
+        }
+
+        // ---- Redeem history (edit / delete) ----
+        function renderRedeemHistory() {
+            var box = document.getElementById("redeem-history");
+            box.innerHTML = "";
+            var reds = (store.redemptions || []).slice().sort(function (a, b) { return new Date(b.at) - new Date(a.at); });
+            if (!reds.length) { box.innerHTML = '<div class="card muted">No redemptions yet.</div>'; return; }
+            reds.forEach(function (r) {
+                var rid = r.id || r.at;
+                var d = new Date(r.at);
+                var ds = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+                var card = document.createElement("div");
+                card.className = "card";
+                card.innerHTML =
+                    '<div class="row"><div><div style="font-weight:700;color:' + esc(kidColor(r.kidId)) + '">' + esc(kidName(r.kidId)) + '</div>' +
+                        '<div class="muted">' + esc(ds) + '</div></div></div>' +
+                    '<div class="redeem-row" style="margin-top:8px;">' +
+                        '<input type="number" class="rh-amt" value="' + (r.amount || 0) + '" style="width:80px;">' +
+                        '<input type="text" class="rh-note" value="' + esc(r.note || "") + '">' +
+                        '<button onclick="saveRedeem(this,' + r.kidId + ',\'' + esc(rid) + '\')">Save</button>' +
+                        '<button class="secondary" onclick="delRedeem(' + r.kidId + ',\'' + esc(rid) + '\')">Delete</button>' +
+                    '</div>';
+                box.appendChild(card);
+            });
+        }
+        function saveRedeem(btn, kidId, rid) {
+            var card = btn.closest(".card");
+            var amt = Number(card.querySelector(".rh-amt").value);
+            var note = card.querySelector(".rh-note").value;
+            fetch("/store/redeem/edit", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, id: rid, amount: amt, note: note }) })
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
+        }
+        function delRedeem(kidId, rid) {
+            fetch("/store/redeem/delete", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, id: rid }) })
+                .then(function (r) { return r.json(); }).then(function (s) { store = s; render(); });
+        }
+
+        // ---- Manage chores editor ----
         function slugify(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,""); }
         var DAY_DEFS = [["sun","S"],["mon","M"],["tue","T"],["wed","W"],["thu","Th"],["fri","F"],["sat","Sa"]];
-
         function dayBoxes(days){
             var arr = Array.isArray(days) ? days.map(function(d){ return String(d).toLowerCase(); }) : [];
             return DAY_DEFS.map(function(p){
@@ -283,9 +332,7 @@
             if (!box) return;
             box.innerHTML = (CONFIG.chores||[]).map(choreCard).join("");
         }
-        function addChore(){
-            document.getElementById("chore-editor").insertAdjacentHTML("beforeend", choreCard(null));
-        }
+        function addChore(){ document.getElementById("chore-editor").insertAdjacentHTML("beforeend", choreCard(null)); }
         function collectChores(){
             var used = {}, out = [];
             document.querySelectorAll(".chore-edit").forEach(function(div){
@@ -308,11 +355,8 @@
                     c.rotate = ks;
                     var off = Number(div.querySelector(".ce-offset").value);
                     if (off) c.offset = off;
-                } else if (a.indexOf("kid:") === 0) {
-                    c.who = a.slice(4);
-                } else {
-                    c.who = "all";
-                }
+                } else if (a.indexOf("kid:") === 0) { c.who = a.slice(4); }
+                else { c.who = "all"; }
                 out.push(c);
             });
             return out;
@@ -327,23 +371,17 @@
                 kids: CONFIG.kids || [],
                 chores: collectChores()
             };
-            fetch("/chores", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
-                body: JSON.stringify(cfg)
-            }).then(function(r){
-                if (r.status === 401) { errEl.textContent = "Wrong PIN — reload and unlock again."; return null; }
-                return r.json();
-            }).then(function(saved){
-                if (!saved) return;
-                CONFIG = saved;
-                renderChores();
-                var t = document.getElementById("chores-saved");
-                t.style.display = "inline";
-                setTimeout(function(){ t.style.display = "none"; }, 1500);
-            }).catch(function(){ errEl.textContent = "Could not save. Check connection."; });
+            fetch("/chores", { method: "PUT", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify(cfg) })
+                .then(function(r){ if (r.status === 401) { errEl.textContent = "Wrong PIN — reload and unlock again."; return null; } return r.json(); })
+                .then(function(saved){
+                    if (!saved) return;
+                    CONFIG = saved;
+                    renderChores();
+                    var t = document.getElementById("chores-saved");
+                    t.style.display = "inline";
+                    setTimeout(function(){ t.style.display = "none"; }, 1500);
+                }).catch(function(){ errEl.textContent = "Could not save. Check connection."; });
         }
-
     </script>
 </body>
 </html>

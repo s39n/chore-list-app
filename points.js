@@ -83,7 +83,67 @@ export function approveWeek(store, kidId, weekStart, points) {
 export function redeemPoints(store, kidId, amount, note) {
     const id = String(kidId);
     const amt = Number(amount);
+    if (!store.redemptions) store.redemptions = [];
     store.balances[id] = (store.balances[id] || 0) - amt;
-    store.redemptions.push({ kidId: id, amount: amt, note: String(note || ""), at: new Date().toISOString() });
+    store.redemptions.push({
+        id: "r" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+        kidId: id, amount: amt, note: String(note || ""), at: new Date().toISOString()
+    });
+    return store;
+}
+
+// ---- Running "unbanked / banked" points model -------------------------------
+// Banked = current balance. Unbanked = earned but not yet approved into the bank.
+//   totalBanked  = balance + totalRedeemed   (points that have passed through the bank)
+//   unbanked     = totalEarned - totalBanked
+export function totalEarned(store, kidId) {
+    const id = String(kidId);
+    return (store.completions || []).filter(c => String(c.kidId) === id)
+        .reduce((s, c) => s + (c.points || 0), 0);
+}
+export function totalRedeemed(store, kidId) {
+    const id = String(kidId);
+    return (store.redemptions || []).filter(r => String(r.kidId) === id)
+        .reduce((s, r) => s + (r.amount || 0), 0);
+}
+export function unbankedPoints(store, kidId) {
+    const id = String(kidId);
+    const balance = (store.balances && store.balances[id]) || 0;
+    return totalEarned(store, id) - balance - totalRedeemed(store, id);
+}
+// Move all of a kid's unbanked points into their banked balance.
+export function bankUnbanked(store, kidId) {
+    const id = String(kidId);
+    const amt = unbankedPoints(store, id);
+    if (amt > 0) {
+        store.balances[id] = ((store.balances && store.balances[id]) || 0) + amt;
+        if (!store.approvals) store.approvals = [];
+        store.approvals.push({ kidId: id, points: amt, at: new Date().toISOString() });
+    }
+    return store;
+}
+// Delete a redemption (refunds its amount back to the balance).
+export function deleteRedemption(store, kidId, rid) {
+    const id = String(kidId);
+    const arr = store.redemptions || [];
+    const i = arr.findIndex(r => String(r.kidId) === id && (r.id === rid || r.at === rid));
+    if (i >= 0) {
+        store.balances[id] = ((store.balances && store.balances[id]) || 0) + (arr[i].amount || 0);
+        arr.splice(i, 1);
+    }
+    return store;
+}
+// Edit a redemption's amount/note (adjusts balance by the difference).
+export function editRedemption(store, kidId, rid, amount, note) {
+    const id = String(kidId);
+    const r = (store.redemptions || []).find(x => String(x.kidId) === id && (x.id === rid || x.at === rid));
+    if (r) {
+        const na = Number(amount);
+        if (Number.isFinite(na)) {
+            store.balances[id] = ((store.balances && store.balances[id]) || 0) + ((r.amount || 0) - na);
+            r.amount = na;
+        }
+        if (note != null) r.note = String(note);
+    }
     return store;
 }

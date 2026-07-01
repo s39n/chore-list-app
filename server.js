@@ -2,7 +2,8 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { defaultStore, approveWeek, redeemPoints, logCompletion, unlogCompletion } from "./points.js";
+import { defaultStore, approveWeek, redeemPoints, logCompletion, unlogCompletion,
+         bankUnbanked, deleteRedemption, editRedemption } from "./points.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -409,6 +410,36 @@ async function handleStore(req, res, urlPath) {
         }
         const store = loadStore();
         redeemPoints(store, kidId, amount, body.note);
+        saveStore(store);
+        return sendJson(res, 200, store);
+    }
+
+    // POST /store/bank — move all of a kid's unbanked points into the bank
+    if (req.method === "POST" && urlPath === "/store/bank") {
+        const kidId = String(body.kidId || "");
+        if (!kidId) return sendJson(res, 400, { error: "kidId required" });
+        const store = loadStore();
+        bankUnbanked(store, kidId);
+        saveStore(store);
+        return sendJson(res, 200, store);
+    }
+
+    // POST /store/redeem/delete — remove a redemption (refunds the balance)
+    if (req.method === "POST" && urlPath === "/store/redeem/delete") {
+        const kidId = String(body.kidId || "");
+        if (!kidId || !body.id) return sendJson(res, 400, { error: "kidId and id required" });
+        const store = loadStore();
+        deleteRedemption(store, kidId, body.id);
+        saveStore(store);
+        return sendJson(res, 200, store);
+    }
+
+    // POST /store/redeem/edit — change a redemption's amount/note (adjusts balance)
+    if (req.method === "POST" && urlPath === "/store/redeem/edit") {
+        const kidId = String(body.kidId || "");
+        if (!kidId || !body.id) return sendJson(res, 400, { error: "kidId and id required" });
+        const store = loadStore();
+        editRedemption(store, kidId, body.id, body.amount, body.note);
         saveStore(store);
         return sendJson(res, 200, store);
     }
