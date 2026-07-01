@@ -100,6 +100,7 @@
 
         .stat {
             text-align: right;
+            margin-left: 18px;   /* old iPad Safari ignores flex `gap` */
         }
 
         .stat-value {
@@ -179,6 +180,7 @@
         }
 
         .task-done:last-child { border-bottom: none; }
+        .task-done > * + * { margin-left: 8px; }   /* spacing without flex gap */
 
         .task-done-check {
             color: var(--color);
@@ -914,7 +916,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v19)…";
+        document.getElementById("last-updated").textContent = "Loading (v20)…";
         loadScores();
         loadCalendar();
         loadWeather();
