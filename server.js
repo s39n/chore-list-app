@@ -570,24 +570,25 @@ http.createServer((req, res) => {
     console.log(`Parent:  http://<your-PC-IP>:${PORT}/approve.html  (PIN: ${PARENT_PIN})\n`);
 });
 
-// Keep weather fresh. The first fetch can race container networking coming up,
-// so retry a few times on boot until it lands, then refresh hourly.
-(async function () {
-    for (let i = 0; i < 12; i++) {
-        if (await fetchWeather()) break;   // retry until THIS fetch works
-        await new Promise((r) => setTimeout(r, 15000));
+// The container's outbound network usually isn't ready for a while after the
+// process starts, so give it an initial delay, then keep retrying every 30s
+// until the fetch actually succeeds — instead of sitting empty until the next
+// hourly refresh. After it lands, the hourly interval keeps it fresh.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function warmup(fn, label) {
+    await sleep(30000);                 // let networking come up first
+    for (let i = 0; i < 40; i++) {      // ~20 min of retries, every 30s
+        if (await fn()) return;
+        console.log(label + ": waiting for network, retry in 30s");
+        await sleep(30000);
     }
-})();
+}
+warmup(fetchWeather, "weather");
 setInterval(fetchWeather, 60 * 60 * 1000);
 
-// Same for the calendar feed — only if a secret iCal URL is configured.
+// Calendar feed — only if a secret iCal URL is configured.
 if (CAL_ICS_URL) {
-    (async function () {
-        for (let i = 0; i < 12; i++) {
-            if (await fetchCalendar()) break;   // retry until THIS fetch works
-            await new Promise((r) => setTimeout(r, 15000));
-        }
-    })();
+    warmup(fetchCalendar, "calendar");
     setInterval(fetchCalendar, 60 * 60 * 1000);
 }
 
