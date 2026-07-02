@@ -20,3 +20,9 @@ services:
       # Oikos backend the proxy forwards /api/* to
       OIKOS_HOST: "${OIKOS_HOST:-10.0.0.202}"
       OIKOS_PORT: "${OIKOS_PORT:-3008}"
+      # Google Calendar "Secret address in iCal format" for the Today strip.
+      # Either paste your .ics URL directly between the quotes below, OR keep the
+      # ${CAL_ICS_URL} variable and put CAL_ICS_URL=... in a .env file next to this
+      # compose file (recommended, so the secret URL stays out of git).
+      CAL_ICS_URL: "${CAL_ICS_URL:-}"
+      CAL_TZ: "${CAL_TZ:-America/Los_Angeles}"
