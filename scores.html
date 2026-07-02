@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Launch full-screen (no Safari chrome) when added to the iPad Home Screen -->
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Chore Board">
     <meta name="mobile-web-app-capable" content="yes">
     <title>Chore Scores</title>
@@ -19,7 +19,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 16px;
+            /* extra top padding clears the translucent status bar (no safe-area on iOS 9) */
+            padding: 28px 16px 16px;
         }
 
         h1 {
@@ -33,7 +34,7 @@
 
         #last-updated {
             position: absolute;
-            top: 10px;
+            top: 26px;
             left: 14px;
             margin: 0;
             color: #666;
@@ -43,7 +44,7 @@
 
         #refresh-btn {
             position: fixed;
-            top: 8px;
+            top: 24px;
             right: 12px;
             z-index: 50;
             background: rgba(255,255,255,0.08);
@@ -548,6 +549,7 @@
         // ---- Standalone chore config (served as /chores.json) ----------------
         var CONFIG = null;
         var DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+        var lastRenderSig = null;   // skip DOM rebuilds when nothing changed
 
         function choreById(id) {
             var list = (CONFIG && CONFIG.chores) || [];
@@ -692,6 +694,14 @@
                 var kids = (CONFIG.kids && CONFIG.kids.length) ? CONFIG.kids : KIDS;
                 document.getElementById("error-msg").style.display = "none";
 
+                // Old iPads (1GB RAM, old WebKit) leak memory if the board is wiped
+                // and rebuilt every poll. Only rebuild when the data actually changed.
+                var sig = JSON.stringify(CONFIG.chores) + "|" +
+                          JSON.stringify(STORE.completions || []) + "|" +
+                          JSON.stringify(STORE.balances || {}) + "|" + wi + "|" + todayStr();
+                if (sig !== lastRenderSig) {
+                lastRenderSig = sig;
+
                 var board = document.getElementById("scoreboard");
                 board.innerHTML = "";
 
@@ -767,6 +777,7 @@
 
                     board.appendChild(card);
                 });
+                }
 
                 var now = new Date();
                 document.getElementById("last-updated").textContent = "Updated " + fmtTime(now);
@@ -916,7 +927,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v20)…";
+        document.getElementById("last-updated").textContent = "Loading (v21)…";
         loadScores();
         loadCalendar();
         loadWeather();
