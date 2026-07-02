@@ -125,8 +125,10 @@ async function fetchWeather() {
         fs.mkdirSync(DATA_DIR, { recursive: true });
         fs.writeFileSync(WEATHER_FILE, JSON.stringify(out, null, 2));
         console.log("weather:", out.temp + "°", out.desc);
+        return true;
     } catch (e) {
         console.log("weather fetch failed:", e.message);
+        return false;
     }
 }
 
@@ -256,7 +258,7 @@ function todaysEvents(text, today) {
     return out.map((e) => ({ time: e.time, title: e.title }));
 }
 async function fetchCalendar() {
-    if (!CAL_ICS_URL) return;
+    if (!CAL_ICS_URL) return false;
     try {
         const r = await fetch(CAL_ICS_URL);
         if (!r.ok) throw new Error("http " + r.status);
@@ -269,8 +271,10 @@ async function fetchCalendar() {
         fs.mkdirSync(DATA_DIR, { recursive: true });
         fs.writeFileSync(CALENDAR_FILE, JSON.stringify(out, null, 2));
         console.log("calendar:", out.events.length, "events today");
+        return true;
     } catch (e) {
         console.log("calendar fetch failed:", e.message);
+        return false;
     }
 }
 function loadCalendarFile() {
@@ -569,12 +573,8 @@ http.createServer((req, res) => {
 // Keep weather fresh. The first fetch can race container networking coming up,
 // so retry a few times on boot until it lands, then refresh hourly.
 (async function () {
-    for (let i = 0; i < 6; i++) {
-        await fetchWeather();
-        try {
-            const w = JSON.parse(fs.readFileSync(WEATHER_FILE, "utf8"));
-            if (w && w.temp != null) break;
-        } catch { /* not written yet — retry */ }
+    for (let i = 0; i < 12; i++) {
+        if (await fetchWeather()) break;   // retry until THIS fetch works
         await new Promise((r) => setTimeout(r, 15000));
     }
 })();
@@ -583,14 +583,11 @@ setInterval(fetchWeather, 60 * 60 * 1000);
 // Same for the calendar feed — only if a secret iCal URL is configured.
 if (CAL_ICS_URL) {
     (async function () {
-        for (let i = 0; i < 6; i++) {
-            await fetchCalendar();
-            try {
-                const c = JSON.parse(fs.readFileSync(CALENDAR_FILE, "utf8"));
-                if (c && c.generated) break;
-            } catch { /* not written yet — retry */ }
+        for (let i = 0; i < 12; i++) {
+            if (await fetchCalendar()) break;   // retry until THIS fetch works
             await new Promise((r) => setTimeout(r, 15000));
         }
     })();
     setInterval(fetchCalendar, 60 * 60 * 1000);
 }
+
