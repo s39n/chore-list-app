@@ -85,6 +85,16 @@
         <div class="sub">Manual bonuses and discipline penalties. Delete to reverse one.</div>
         <div id="adjust-history"></div>
 
+        <h2>Manage people</h2>
+        <div class="sub">Add a child, rename, pick a color, or remove someone. Renaming updates their chores automatically. Saving updates the board for everyone.</div>
+        <div id="people-editor"></div>
+        <div style="margin:10px 0 24px;">
+            <button class="secondary" onclick="addPerson()">+ Add person</button>
+            <button onclick="savePeople()">Save people</button>
+            <span id="people-saved" class="approved" style="display:none;">Saved ✓</span>
+            <div id="people-err" class="err"></div>
+        </div>
+
         <h2>Manage chores</h2>
         <div class="sub">Add, edit, or remove chores. Saving updates the board and this page for everyone.</div>
         <div id="chore-editor"></div>
@@ -168,7 +178,7 @@
             renderRedeemHistory();
             renderAdjustHistory();
         }
-        function render() { renderData(); renderChores(); }
+        function render() { renderData(); renderPeople(); renderChores(); }
 
         // ---- Points cards ----
         function renderPoints() {
@@ -343,6 +353,107 @@
         function delAdjust(kidId, aid) {
             fetch("/store/adjust/delete", { method: "POST", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify({ kidId: kidId, id: aid }) })
                 .then(function (r) { return r.json(); }).then(function (s) { store = s; renderData(); });
+        }
+
+        // ---- Manage people editor ----
+        var PALETTE = ["#e14b4b","#c44bd8","#3f7fe0","#1a8f3c","#e08a2b","#0aa5a5","#8a5cf6","#d4477e"];
+        function nextColor(){
+            var used = kidsList().map(function(k){ return (k.color||"").toLowerCase(); });
+            for (var i=0;i<PALETTE.length;i++){ if (used.indexOf(PALETTE[i].toLowerCase())<0) return PALETTE[i]; }
+            return PALETTE[Math.floor(Math.random()*PALETTE.length)];
+        }
+        function personCard(k){
+            k = k || {};
+            return '<div class="card person-edit" data-id="'+esc(String(k.id==null?"":k.id))+'">'
+                + '<div class="row">'
+                +   '<input type="color" class="pe-color" value="'+esc(k.color||"#2d6cdf")+'" title="color" style="width:46px;height:40px;padding:2px;border:1px solid #ccc;border-radius:8px;flex:0 0 auto;">'
+                +   '<input type="text" class="pe-name" placeholder="Name" value="'+esc(k.name||"")+'" style="flex:1;min-width:140px">'
+                +   '<button class="secondary" onclick="removePerson(this)">Remove</button>'
+                + '</div>'
+                + '</div>';
+        }
+        function renderPeople(){
+            var box = document.getElementById("people-editor");
+            if (!box) return;
+            box.innerHTML = kidsList().map(personCard).join("");
+        }
+        function addPerson(){
+            document.getElementById("people-editor").insertAdjacentHTML("beforeend", personCard({ id:"", name:"", color: nextColor() }));
+        }
+        function removePerson(btn){
+            var card = btn.closest(".person-edit");
+            var name = (card.querySelector(".pe-name").value || "").trim();
+            if (name && !confirm("Remove "+name+"?\nTheir chores will be unassigned and they'll drop off the board. Past points history is kept but no longer shown.")) return;
+            card.remove();
+        }
+        function collectPeople(){
+            var maxId = 0;
+            kidsList().forEach(function(k){ var n=Number(k.id); if(isFinite(n)&&n>maxId) maxId=n; });
+            var kids = [];
+            document.querySelectorAll(".person-edit").forEach(function(div){
+                var name = (div.querySelector(".pe-name").value || "").trim();
+                if (!name) return;
+                var color = div.querySelector(".pe-color").value || "#2d6cdf";
+                var idAttr = div.getAttribute("data-id");
+                var id = (idAttr === "" || idAttr == null) ? (++maxId) : Number(idAttr);
+                kids.push({ id: id, name: name, color: color });
+            });
+            return kids;
+        }
+        // Keep chore assignments in sync when a person is renamed or removed.
+        // Chores reference people by name (who / rotate), so translate old->new.
+        function reconcileChores(oldKids, newKids, chores){
+            var oldById = {}, newById = {};
+            oldKids.forEach(function(k){ oldById[String(k.id)] = k.name; });
+            newKids.forEach(function(k){ newById[String(k.id)] = k.name; });
+            var rename = {}, removed = {};
+            Object.keys(oldById).forEach(function(id){
+                if (!newById.hasOwnProperty(id)) removed[oldById[id]] = true;
+                else if (oldById[id] !== newById[id]) rename[oldById[id]] = newById[id];
+            });
+            (chores||[]).forEach(function(c){
+                if (c.who && rename[c.who]) c.who = rename[c.who];
+                if (c.who && removed[c.who]) c.who = "all";
+                if (Object.prototype.toString.call(c.rotate) === "[object Array]") {
+                    c.rotate = c.rotate
+                        .map(function(n){ return rename[n] || n; })
+                        .filter(function(n){ return !removed[n]; });
+                }
+            });
+            return chores;
+        }
+        function savePeople(){
+            var errEl = document.getElementById("people-err");
+            errEl.textContent = "";
+            var oldKids = kidsList().slice();
+            var newKids = collectPeople();
+            if (!newKids.length) { errEl.textContent = "Add at least one person."; return; }
+            var seen = {};
+            for (var i=0;i<newKids.length;i++){
+                var key = newKids[i].name.toLowerCase();
+                if (seen[key]) { errEl.textContent = "Two people named \""+newKids[i].name+"\" — names must be unique."; return; }
+                seen[key] = true;
+            }
+            // Collect current chore edits too so a rename/remove is applied and no
+            // unsaved chore change is lost in the same save.
+            var chores = reconcileChores(oldKids, newKids, collectChores());
+            var cfg = {
+                rotationCadence: CONFIG.rotationCadence || "week",
+                rotationEpoch: CONFIG.rotationEpoch || "2026-06-29",
+                defaultPoints: CONFIG.defaultPoints || 10,
+                kids: newKids,
+                chores: chores
+            };
+            fetch("/chores", { method: "PUT", headers: { "Content-Type": "application/json", "x-parent-pin": PIN }, body: JSON.stringify(cfg) })
+                .then(function(r){ if (r.status === 401) { errEl.textContent = "Wrong PIN — reload and unlock again."; return null; } return r.json(); })
+                .then(function(saved){
+                    if (!saved) return;
+                    CONFIG = saved;
+                    renderPeople(); renderChores(); renderPoints();
+                    var t = document.getElementById("people-saved");
+                    t.style.display = "inline";
+                    setTimeout(function(){ t.style.display = "none"; }, 1500);
+                }).catch(function(){ errEl.textContent = "Could not save. Check connection."; });
         }
 
         // ---- Manage chores editor ----

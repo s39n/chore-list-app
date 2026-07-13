@@ -241,6 +241,28 @@ function occursOn(ev, today) {
     return false;
 }
 function minsOf(start) { return start.allDay ? -1 : start.local.hh * 60 + start.local.mm; }
+// Calendar-date arithmetic (tz-safe): advance a {y,m,d} by n days.
+function addDaysYmd(a, n) {
+    const d = new Date(ymdUTC(a) + n * 86400000);
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() };
+}
+const WD_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MO_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function dayLabelFor(a, offset) {
+    if (offset === 1) return "Tomorrow";
+    return WD_ABBR[dowOf(a)] + ", " + MO_ABBR[a.m - 1] + " " + a.d;
+}
+// Events for the next `days` calendar days after `today`, grouped per day.
+// Empty days are dropped so the sleep screen stays tidy.
+function upcomingEvents(text, today, days) {
+    const out = [];
+    for (let n = 1; n <= days; n++) {
+        const d = addDaysYmd(today, n);
+        const evs = todaysEvents(text, d);
+        if (evs.length) out.push({ label: dayLabelFor(d, n), events: evs });
+    }
+    return out;
+}
 function todaysEvents(text, today) {
     today = today || ymdOf(new Date());
     const events = parseICS(text);
@@ -266,11 +288,13 @@ async function fetchCalendar() {
         const t = ymdOf(new Date());
         const out = {
             generated: t.y + "-" + String(t.m).padStart(2, "0") + "-" + String(t.d).padStart(2, "0"),
-            events: todaysEvents(text, t)
+            events: todaysEvents(text, t),
+            upcoming: upcomingEvents(text, t, 3)
         };
         fs.mkdirSync(DATA_DIR, { recursive: true });
         fs.writeFileSync(CALENDAR_FILE, JSON.stringify(out, null, 2));
-        console.log("calendar:", out.events.length, "events today");
+        const upCount = out.upcoming.reduce((s, d) => s + d.events.length, 0);
+        console.log("calendar:", out.events.length, "events today,", upCount, "in next 3 days");
         return true;
     } catch (e) {
         console.log("calendar fetch failed:", e.message);
@@ -281,7 +305,7 @@ function loadCalendarFile() {
     try { return fs.readFileSync(CALENDAR_FILE, "utf8"); }
     catch {
         try { const seed = fs.readFileSync(CALENDAR_SEED, "utf8"); fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(CALENDAR_FILE, seed); return seed; }
-        catch { return JSON.stringify({ generated: "", events: [] }); }
+        catch { return JSON.stringify({ generated: "", events: [], upcoming: [] }); }
     }
 }
 
@@ -323,7 +347,9 @@ function readJsonBody(req) {
 
 function sendJson(res, status, obj) {
     const data = JSON.stringify(obj);
-    res.writeHead(status, { "Content-Type": "application/json" });
+    // no-store keeps old iPad Safari from serving a stale cached copy of the
+    // points/chores JSON, which made the tablet ignore fresh parent edits.
+    res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store, must-revalidate" });
     res.end(data);
 }
 
@@ -527,7 +553,7 @@ http.createServer((req, res) => {
     if (req.url.split("?")[0] === "/weather.json") {
         try {
             const w = fs.readFileSync(WEATHER_FILE, "utf8");
-            res.writeHead(200, { "Content-Type": "application/json" });
+            res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store, must-revalidate" });
             res.end(w);
         } catch {
             sendJson(res, 200, {});
@@ -537,7 +563,7 @@ http.createServer((req, res) => {
 
     // Today's calendar events (served from the volume; refreshed from the iCal feed)
     if (req.url.split("?")[0] === "/calendar.json") {
-        res.writeHead(200, { "Content-Type": "application/json" });
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store, must-revalidate" });
         res.end(loadCalendarFile());
         return;
     }
@@ -591,4 +617,3 @@ if (CAL_ICS_URL) {
     warmup(fetchCalendar, "calendar");
     setInterval(fetchCalendar, 60 * 60 * 1000);
 }
-

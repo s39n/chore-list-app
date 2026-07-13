@@ -360,6 +360,7 @@
         .ss-weather .hl { font-size: 1.05rem; color: #aab6cc; margin-top: 4px; }
         .ss-sched { margin-top: 26px; width: 100%; max-width: 520px; }
         .ss-sched h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 2px; color: #ffcc44; margin-bottom: 8px; }
+        .ss-sched h3.ss-ahead { margin-top: 18px; color: #c9a03a; }
         .ss-ev { font-size: 1.3rem; padding: 5px 0; display: flex; gap: 26px; justify-content: center; }
         .ss-ev .et { color: #ffcc44; font-weight: 700; min-width: 92px; text-align: right; margin-right: 22px; }
         .ss-none { color: #8893aa; font-size: 1.1rem; }
@@ -406,8 +407,17 @@
         // Plain XHR (works on every iPad). onOk(parsedJsonOrNull) / onErr(status).
         function xhrJson(method, url, headers, body, onOk, onErr) {
             try {
+                // Old iPad Safari caches GET responses aggressively (ignoring a
+                // page reload), so the board could keep showing stale points even
+                // after "Refresh". Append a unique query param to every GET so the
+                // browser is forced to hit the server each time.
+                if (String(method).toUpperCase() === "GET") {
+                    url += (url.indexOf("?") >= 0 ? "&" : "?") + "_=" + new Date().getTime();
+                }
                 var xhr = new XMLHttpRequest();
                 xhr.open(method, url, true);
+                // Belt-and-suspenders: also ask WebKit not to use its cache.
+                try { xhr.setRequestHeader("Cache-Control", "no-cache"); } catch (e) {}
                 if (headers) {
                     for (var h in headers) {
                         if (headers.hasOwnProperty(h)) xhr.setRequestHeader(h, headers[h]);
@@ -872,16 +882,28 @@
                 ' <span class="t">' + WEATHER.temp + '°</span> ' + escHtml(WEATHER.desc || "") +
                 '<div class="hl">' + escHtml(WEATHER.label || "") + hl + '</div></div>';
         }
+        function ssEventRows(evs) {
+            var h = "";
+            for (var i = 0; i < evs.length; i++) {
+                h += '<div class="ss-ev"><span class="et">' + escHtml(evs[i].time || "") +
+                     '</span><span>' + escHtml(evs[i].title || "") + '</span></div>';
+            }
+            return h;
+        }
         function ssSchedHtml() {
             var evs = (CAL && CAL.events) ? CAL.events : [];
             var h = '<div class="ss-sched"><h3>Today</h3>';
             if (!evs.length) {
                 h += '<div class="ss-none">Nothing scheduled</div>';
             } else {
-                for (var i = 0; i < evs.length; i++) {
-                    h += '<div class="ss-ev"><span class="et">' + escHtml(evs[i].time || "") +
-                         '</span><span>' + escHtml(evs[i].title || "") + '</span></div>';
-                }
+                h += ssEventRows(evs);
+            }
+            // Next 3 days, grouped by day (empty days are omitted server-side).
+            var up = (CAL && CAL.upcoming) ? CAL.upcoming : [];
+            for (var d = 0; d < up.length; d++) {
+                if (!up[d] || !up[d].events || !up[d].events.length) continue;
+                h += '<h3 class="ss-ahead">' + escHtml(up[d].label || "") + '</h3>' +
+                     ssEventRows(up[d].events);
             }
             return h + '</div>';
         }
