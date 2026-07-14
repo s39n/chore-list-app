@@ -124,6 +124,7 @@
         function kidsList(){ return (CONFIG.kids && CONFIG.kids.length) ? CONFIG.kids : KIDS; }
         function kidName(id){ var k = kidsList().filter(function(x){ return String(x.id)===String(id); })[0]; return k ? k.name : ("Kid "+id); }
         function kidColor(id){ var k = kidsList().filter(function(x){ return String(x.id)===String(id); })[0]; return (k && k.color) || "#2d6cdf"; }
+        function chorePts(c){ return (c && typeof c.points === "number") ? c.points : (CONFIG.defaultPoints || 10); }
 
         // ---- Running points model (mirrors points.js) ----
         function totalEarned(id){ return (store.completions||[]).filter(function(c){return String(c.kidId)===String(id);}).reduce(function(s,c){return s+(c.points||0);},0); }
@@ -287,7 +288,38 @@
                 html += '<div class="pv-row"><span style="color:' + esc(kidColor(c.kidId)) + ';font-weight:600;">' + esc(kidName(c.kidId)) + '</span><span>' + esc(c.title || "") + '</span><span class="muted">' + esc(tm) + '</span><strong>+' + (c.points || 0) + '</strong></div>';
             });
             html += '</div>';
+            // Backfill: mark a planned chore done for a kid on this day, for when
+            // a child forgot to check it off on the tablet.
+            var kidOpts = kidsList().map(function (k) { return '<option value="' + esc(String(k.id)) + '">' + esc(k.name) + '</option>'; }).join("");
+            var choreOpts = (CONFIG.chores || []).map(function (c) { return '<option value="' + esc(String(c.id)) + '">' + esc(c.title) + ' (+' + chorePts(c) + ')</option>'; }).join("");
+            html += '<div class="card" style="margin-top:10px;">' +
+                        '<div style="font-weight:700;margin-bottom:4px;">Add a missed chore</div>' +
+                        '<div class="sub">Credits the child for this day, as if they had checked it off.</div>' +
+                        '<div class="redeem-row">' +
+                            '<select id="bf-kid" style="padding:8px;border:1px solid #ccc;border-radius:8px;font-size:0.9rem;">' + kidOpts + '</select>' +
+                            '<select id="bf-chore" style="padding:8px;border:1px solid #ccc;border-radius:8px;font-size:0.9rem;flex:1;">' + choreOpts + '</select>' +
+                            '<button onclick="addMissed(\'' + esc(key) + '\')">Mark done</button>' +
+                        '</div>' +
+                        '<div id="bf-err" class="err"></div>' +
+                    '</div>';
             document.getElementById("cal-detail").innerHTML = html;
+        }
+        function addMissed(key) {
+            var errEl = document.getElementById("bf-err");
+            errEl.textContent = "";
+            var kidId = document.getElementById("bf-kid").value;
+            var choreId = document.getElementById("bf-chore").value;
+            var chore = (CONFIG.chores || []).filter(function (c) { return String(c.id) === String(choreId); })[0];
+            if (!kidId || !chore) { errEl.textContent = "Pick a child and a chore."; return; }
+            // Noon UTC keeps the completion on this calendar day in US time zones.
+            var at = key + "T12:00:00.000Z";
+            fetch("/store/complete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-parent-pin": PIN },
+                body: JSON.stringify({ kidId: kidId, taskId: chore.id, title: chore.title, points: chorePts(chore), at: at })
+            }).then(function (r) { return r.json(); })
+              .then(function (s) { store = s; renderData(); showDay(key); })
+              .catch(function () { errEl.textContent = "Could not save. Check connection."; });
         }
 
         // ---- Redeem history (edit / delete) ----
