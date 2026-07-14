@@ -757,7 +757,6 @@
                                 '<span class="task-done-title">' + escHtml(displayTitle({ title: d.title })) +
                                     (d.count > 1 ? ' <span class="done-times">×' + d.count + '</span>' : '') + '</span>' +
                                 '<span class="done-pts">+' + d.points + '</span>' +
-                                '<button class="again-btn" id="again-' + kid.id + '-' + d.taskId + '" onclick="markDone(\'' + d.taskId + '\', ' + kid.id + ')">+1</button>' +
                                 '<button class="undo-btn" id="undo-' + kid.id + '-' + d.taskId + '" onclick="markUndone(\'' + d.taskId + '\', ' + kid.id + ')">Undo</button>' +
                             '</div>';
                     });
