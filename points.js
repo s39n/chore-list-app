@@ -15,15 +15,22 @@ export function defaultStore() {
 
 // Record a single chore completion (one row per "Done" tap, so repeats count).
 // Points are snapshotted at tap time from the chore's current value. Returns the row.
-export function logCompletion(store, kidId, taskId, title, points) {
+export function logCompletion(store, kidId, taskId, title, points, at) {
     if (!store.completions) store.completions = [];
     const pts = Number.isFinite(Number(points)) ? Number(points) : pointValueFor(store, title);
+    // `at` lets a parent backfill a missed chore onto a past day (from the
+    // calendar); when omitted it's "now", as with a normal tablet tap.
+    let when = new Date().toISOString();
+    if (typeof at === "string" && at) {
+        const d = new Date(at);
+        if (!isNaN(d.getTime())) when = d.toISOString();
+    }
     const rec = {
         kidId: String(kidId),
         taskId: taskId,
         title: String(title || ""),
         points: pts,
-        at: new Date().toISOString(),
+        at: when,
     };
     store.completions.push(rec);
     return rec;

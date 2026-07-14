@@ -373,7 +373,7 @@ async function handleStore(req, res, urlPath) {
             return sendJson(res, 400, { error: "kidId and taskId required" });
         }
         const store = loadStore();
-        logCompletion(store, body.kidId, body.taskId, body.title, body.points);
+        logCompletion(store, body.kidId, body.taskId, body.title, body.points, body.at);
         saveStore(store);
         return sendJson(res, 200, store);
     }
@@ -523,9 +523,11 @@ http.createServer((req, res) => {
         return;
     }
 
-    // Local points/banking store
-    if (req.url === "/store" || req.url.startsWith("/store/")) {
-        handleStore(req, res, req.url.split("?")[0]).catch(() => {
+    // Local points/banking store. Strip the cache-buster query the tablet adds
+    // to GETs before matching, or "/store?_=123" would 404 and zero out balances.
+    const storePath = req.url.split("?")[0];
+    if (storePath === "/store" || storePath.startsWith("/store/")) {
+        handleStore(req, res, storePath).catch(() => {
             sendJson(res, 500, { error: "store error" });
         });
         return;
