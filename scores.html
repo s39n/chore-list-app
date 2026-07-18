@@ -270,6 +270,26 @@
             flex-shrink: 0;
         }
 
+        /* Points taken away (discipline) — same row shape as .task-done, in red */
+        .task-lost {
+            padding: 8px 4px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .task-lost > * + * { margin-left: 8px; }
+        .task-lost-mark { color: #e05555; font-size: 0.9rem; }
+        .task-lost-title { color: #ccc; font-size: 0.85rem; flex: 1; }
+        .lost-pts {
+            color: #e05555;
+            font-size: 0.8rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .stat-value.lost { color: #e05555; }
+
         /* "Completed" divider above the done list */
         .done-header {
             font-size: 0.6rem;
@@ -524,6 +544,23 @@
             return order.map(function (k) { return map[k]; });
         }
 
+        // Points taken away (negative adjustments) at or after `since`.
+        // Returns { total: <positive number>, items: [{ points, note, at }] }.
+        function kidDeductionsSince(kidId, since) {
+            var list = STORE.adjustments || [];
+            var sinceMs = since.getTime();
+            var total = 0, items = [];
+            for (var i = 0; i < list.length; i++) {
+                var a = list[i];
+                if (String(a.kidId) !== String(kidId)) continue;
+                if ((a.points || 0) >= 0) continue;
+                if (!atSince(a.at, sinceMs)) continue;
+                total += -a.points;
+                items.push(a);
+            }
+            return { total: total, items: items };
+        }
+
         function getWeekStart() {
             var now = new Date();
             var day = now.getDay();
@@ -708,7 +745,8 @@
                 // and rebuilt every poll. Only rebuild when the data actually changed.
                 var sig = JSON.stringify(CONFIG.chores) + "|" +
                           JSON.stringify(STORE.completions || []) + "|" +
-                          JSON.stringify(STORE.balances || {}) + "|" + wi + "|" + todayStr();
+                          JSON.stringify(STORE.balances || {}) + "|" +
+                          JSON.stringify(STORE.adjustments || []) + "|" + wi + "|" + todayStr();
                 if (sig !== lastRenderSig) {
                 lastRenderSig = sig;
 
@@ -727,6 +765,7 @@
                     var balance = (STORE.balances && STORE.balances[String(kid.id)]) || 0;
                     var weeklyPoints = kidPointsSince(kid.id, weekStart);
                     var todayPoints = kidPointsSince(kid.id, todayStart);
+                    var lostWeek = kidDeductionsSince(kid.id, weekStart);
 
                     // Open = not done yet today; completed ones drop to the tally below.
                     var openChores = mine.filter(function(c) {
@@ -761,8 +800,21 @@
                             '</div>';
                     });
 
+                    // Points taken away this week — each deduction with its reason,
+                    // so the kids can see it happened (not just a quietly lower total).
+                    var lostHtml = "";
+                    lostWeek.items.forEach(function(a) {
+                        lostHtml +=
+                            '<div class="task-lost">' +
+                                '<span class="task-lost-mark">✖</span>' +
+                                '<span class="task-lost-title">' + escHtml(a.note || "Points taken away") + '</span>' +
+                                '<span class="lost-pts">−' + (-a.points) + '</span>' +
+                            '</div>';
+                    });
+
                     var bodyHtml = openHtml || '<div class="all-done">All done! 🎉</div>';
                     if (doneHtml) bodyHtml += '<div class="done-header">Completed today</div>' + doneHtml;
+                    if (lostHtml) bodyHtml += '<div class="done-header">Points lost this week</div>' + lostHtml;
 
                     card.innerHTML =
                         '<div class="kid-header">' +
@@ -776,6 +828,11 @@
                                     '<div class="stat-value">' + weeklyPoints + '</div>' +
                                     '<div class="stat-label">pts week</div>' +
                                 '</div>' +
+                                (lostWeek.total > 0 ?
+                                '<div class="stat">' +
+                                    '<div class="stat-value lost">−' + lostWeek.total + '</div>' +
+                                    '<div class="stat-label">lost</div>' +
+                                '</div>' : '') +
                                 '<div class="stat">' +
                                     '<div class="stat-value">' + balance + '</div>' +
                                     '<div class="stat-label">bank</div>' +

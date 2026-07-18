@@ -1,0 +1,87 @@
+{
+  ".claude/settings.local.json": {
+    "mtime": 1779404697.8316524,
+    "ast_hash": "8fdc0ec01d356fe07c957fcc5bb749ee",
+    "semantic_hash": "8fdc0ec01d356fe07c957fcc5bb749ee"
+  },
+  "calendar.json": {
+    "mtime": 1783971094.3987927,
+    "ast_hash": "90124bec428fe979b8ef42b8faf33b49",
+    "semantic_hash": "90124bec428fe979b8ef42b8faf33b49"
+  },
+  "chores.json": {
+    "mtime": 1782929667.0170643,
+    "ast_hash": "69c24535652694f2e8aefce93eb4976d",
+    "semantic_hash": "69c24535652694f2e8aefce93eb4976d"
+  },
+  "index.js": {
+    "mtime": 1779405621.3983445,
+    "ast_hash": "1b333e86a90e66cdf6d7d49cab0233bf",
+    "semantic_hash": "1b333e86a90e66cdf6d7d49cab0233bf"
+  },
+  "index.test.js": {
+    "mtime": 1782759331.3814137,
+    "ast_hash": "ce62823e8e68cee2bf9c8d0d7baf74ad",
+    "semantic_hash": "ce62823e8e68cee2bf9c8d0d7baf74ad"
+  },
+  "package.json": {
+    "mtime": 1779405090.8158994,
+    "ast_hash": "8c423d57821bbb409846e07b95811c5e",
+    "semantic_hash": "8c423d57821bbb409846e07b95811c5e"
+  },
+  "points.js": {
+    "mtime": 1783992711.2853887,
+    "ast_hash": "4cbb87429542d4384bfab6db57717141",
+    "semantic_hash": "4cbb87429542d4384bfab6db57717141"
+  },
+  "points.test.js": {
+    "mtime": 1782759347.2820704,
+    "ast_hash": "2e408d5d258c239ef511223b7156e792",
+    "semantic_hash": "2e408d5d258c239ef511223b7156e792"
+  },
+  "server.js": {
+    "mtime": 1783992585.85906,
+    "ast_hash": "aa83d36da4d8a1876da8815c77cc8e44",
+    "semantic_hash": "aa83d36da4d8a1876da8815c77cc8e44"
+  },
+  "vitest.config.js": {
+    "mtime": 1779396032.6147518,
+    "ast_hash": "e7a2efdde911ffc91799a43175ea386d",
+    "semantic_hash": "e7a2efdde911ffc91799a43175ea386d"
+  },
+  "AGENTS.md": {
+    "mtime": 1780435012.6396604,
+    "ast_hash": "cfedeed753d1e4f445504d78ed7821d0",
+    "semantic_hash": "cfedeed753d1e4f445504d78ed7821d0"
+  },
+  "CLAUDE.md": {
+    "mtime": 1779742540.8727427,
+    "ast_hash": "e564dd455e516fe4c0412bc3739b4b96",
+    "semantic_hash": "e564dd455e516fe4c0412bc3739b4b96"
+  },
+  "_probe.txt": {
+    "mtime": 1783992354.0,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "approve.html": {
+    "mtime": 1783992623.0384612,
+    "ast_hash": "e482745d5069792c3e6fff0580385c51",
+    "semantic_hash": "e482745d5069792c3e6fff0580385c51"
+  },
+  "docker-compose.yml": {
+    "mtime": 1783007588.1409724,
+    "ast_hash": "306208742a5bb9509f40b2dbca282f27",
+    "semantic_hash": "306208742a5bb9509f40b2dbca282f27"
+  },
+  "index.html": {
+    "mtime": 1779398330.0658815,
+    "ast_hash": "9a27ba412f437514836afa6ff99e7526",
+    "semantic_hash": "9a27ba412f437514836afa6ff99e7526"
+  },
+  "scores.html": {
+    "mtime": 1783998507.5259476,
+    "ast_hash": "a5129f985aad055e4b4356ba27373b82",
+    "semantic_hash": "a5129f985aad055e4b4356ba27373b82"
+  }
+}
