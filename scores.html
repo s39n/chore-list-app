@@ -290,6 +290,77 @@
         }
         .stat-value.lost { color: #e05555; }
 
+        /* Manual bonus points awarded — same row shape, in green like done-pts */
+        .task-bonus {
+            padding: 8px 4px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .task-bonus > * + * { margin-left: 8px; }
+        .task-bonus-mark { color: #69b369; font-size: 0.9rem; }
+        .task-bonus-title { color: #ccc; font-size: 0.85rem; flex: 1; }
+        .bonus-pts {
+            color: #69b369;
+            font-size: 0.8rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        /* Per-card tabs — only one pane on screen, so the board stays
+           one screenful no matter how many chores a kid has. */
+        .card-tabs {
+            display: flex;
+            margin: 2px 0 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .card-tab {
+            background: none;
+            border: none;
+            color: #6b7488;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 8px 9px;
+            margin-right: 2px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        .card-tab.active { color: var(--color); border-bottom-color: var(--color); }
+        .card-tab .tab-n {
+            display: inline-block;
+            background: rgba(255,255,255,0.1);
+            color: #aab;
+            border-radius: 7px;
+            padding: 1px 6px;
+            margin-left: 4px;
+            font-size: 0.68rem;
+        }
+        .card-tab.active .tab-n { background: var(--color); color: #fff; }
+
+        /* A tab's contents. Scrolls inside the card rather than stretching
+           the page, so the tablet never needs a full-page scroll. */
+        .pane {
+            /* Starting guess; sizePanes() replaces it with the real leftover
+               height once the card is laid out. */
+            max-height: 50vh;
+            min-height: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .pane.hidden { display: none; }
+        .pane-empty { color: #555; font-size: 0.85rem; padding: 10px 2px; }
+        .pane > .done-header:first-child {
+            margin-top: 0;
+            border-top: none;
+            padding-top: 0;
+        }
+
         /* "Completed" divider above the done list */
         .done-header {
             font-size: 0.6rem;
@@ -331,6 +402,29 @@
             letter-spacing: 1px;
             margin-bottom: 8px;
         }
+        #calendar-panel .cal-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        #calendar-panel .cal-head h2 { margin-bottom: 0; }
+        .cal-count {
+            background: rgba(255,204,68,0.18);
+            border-radius: 7px;
+            padding: 1px 6px;
+            margin-left: 4px;
+        }
+        .cal-toggle {
+            color: #8a8aa0;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .cal-body { margin-top: 8px; }
         .cal-event {
             display: flex;
             gap: 26px;
@@ -488,6 +582,21 @@
         // taskId -> { kidId, title }, rebuilt each render so markDone knows who/what.
         var TASKMAP = {};
 
+        // Which tab each kid's card is showing. Kept outside render() so a tap
+        // survives the 60-second refresh.
+        var TAB = {};
+        var PANE_KEYS = ["todo", "done", "pts"];
+        function showTab(kidId, name) {
+            TAB[String(kidId)] = name;
+            for (var i = 0; i < PANE_KEYS.length; i++) {
+                var on = (PANE_KEYS[i] === name);
+                var pane = document.getElementById("pane-" + kidId + "-" + PANE_KEYS[i]);
+                var tab = document.getElementById("tab-" + kidId + "-" + PANE_KEYS[i]);
+                if (pane) pane.className = "pane" + (on ? "" : " hidden");
+                if (tab) tab.className = "card-tab" + (on ? " active" : "");
+            }
+        }
+
         // Old iPad Safari mis-parses some ISO strings (Invalid Date), which made a
         // chore appear as BOTH open and completed. Parse the UTC timestamp by hand,
         // and route every "is it since X" check through one shared test so the open
@@ -542,6 +651,23 @@
                 map[k].points += (c.points || 0);
             }
             return order.map(function (k) { return map[k]; });
+        }
+
+        // Manual bonus points (positive adjustments) at or after `since`.
+        // Returns { total, items: [{ points, note, at }] }.
+        function kidBonusSince(kidId, since) {
+            var list = STORE.adjustments || [];
+            var sinceMs = since.getTime();
+            var total = 0, items = [];
+            for (var i = 0; i < list.length; i++) {
+                var a = list[i];
+                if (String(a.kidId) !== String(kidId)) continue;
+                if ((a.points || 0) <= 0) continue;
+                if (!atSince(a.at, sinceMs)) continue;
+                total += a.points;
+                items.push(a);
+            }
+            return { total: total, items: items };
         }
 
         // Points taken away (negative adjustments) at or after `since`.
@@ -763,9 +889,11 @@
                     });
 
                     var balance = (STORE.balances && STORE.balances[String(kid.id)]) || 0;
-                    var weeklyPoints = kidPointsSince(kid.id, weekStart);
                     var todayPoints = kidPointsSince(kid.id, todayStart);
                     var lostWeek = kidDeductionsSince(kid.id, weekStart);
+                    var bonusWeek = kidBonusSince(kid.id, weekStart);
+                    // "pts week" = chores done + manual bonuses awarded this week.
+                    var weeklyPoints = kidPointsSince(kid.id, weekStart) + bonusWeek.total;
 
                     // Open = not done yet today; completed ones drop to the tally below.
                     var openChores = mine.filter(function(c) {
@@ -812,9 +940,49 @@
                             '</div>';
                     });
 
-                    var bodyHtml = openHtml || '<div class="all-done">All done! 🎉</div>';
-                    if (doneHtml) bodyHtml += '<div class="done-header">Completed today</div>' + doneHtml;
-                    if (lostHtml) bodyHtml += '<div class="done-header">Points lost this week</div>' + lostHtml;
+                    // Manual bonus points awarded this week, listed with their reason.
+                    var bonusHtml = "";
+                    bonusWeek.items.forEach(function(a) {
+                        bonusHtml +=
+                            '<div class="task-bonus">' +
+                                '<span class="task-bonus-mark">★</span>' +
+                                '<span class="task-bonus-title">' + escHtml(a.note || "Bonus points") + '</span>' +
+                                '<span class="bonus-pts">+' + a.points + '</span>' +
+                            '</div>';
+                    });
+
+                    // Points tab: bonuses and deductions for the week.
+                    var ptsHtml = "";
+                    if (bonusHtml) ptsHtml += '<div class="done-header">Bonus points this week</div>' + bonusHtml;
+                    if (lostHtml) ptsHtml += '<div class="done-header">Points lost this week</div>' + lostHtml;
+
+                    // Card body = tab strip + one pane per tab. Only the open
+                    // chores show by default; the history is one tap away
+                    // instead of stacked underneath.
+                    var active = TAB[String(kid.id)] || "todo";
+                    var panes = [
+                        { key: "todo", label: "To do", n: openChores.length,
+                          html: openHtml || '<div class="all-done">All done! 🎉</div>' },
+                        { key: "done", label: "Done", n: done.length,
+                          html: doneHtml || '<div class="pane-empty">Nothing done yet today.</div>' },
+                        { key: "pts", label: "Points", n: bonusWeek.items.length + lostWeek.items.length,
+                          html: ptsHtml || '<div class="pane-empty">No bonus or lost points this week.</div>' }
+                    ];
+                    var tabsHtml = '<div class="card-tabs">';
+                    var bodyHtml = "";
+                    panes.forEach(function (p) {
+                        var on = (p.key === active);
+                        tabsHtml +=
+                            '<button class="card-tab' + (on ? ' active' : '') + '"' +
+                                ' id="tab-' + kid.id + '-' + p.key + '"' +
+                                ' onclick="showTab(' + kid.id + ',&#39;' + p.key + '&#39;)">' + p.label +
+                                (p.n ? ' <span class="tab-n">' + p.n + '</span>' : '') +
+                            '</button>';
+                        bodyHtml +=
+                            '<div class="pane' + (on ? '' : ' hidden') + '"' +
+                                ' id="pane-' + kid.id + '-' + p.key + '">' + p.html + '</div>';
+                    });
+                    bodyHtml = tabsHtml + '</div>' + bodyHtml;
 
                     card.innerHTML =
                         '<div class="kid-header">' +
@@ -845,8 +1013,27 @@
                 });
                 }
 
+                sizePanes();
+
                 var now = new Date();
                 document.getElementById("last-updated").textContent = "Updated " + fmtTime(now);
+        }
+
+        // Give every pane exactly the height left between the tab strip and the
+        // bottom of the screen, so a long chore list scrolls inside its card and
+        // the page itself never grows past one screen.
+        function sizePanes() {
+            var cards = document.getElementsByClassName("kid-card");
+            for (var i = 0; i < cards.length; i++) {
+                var tabs = cards[i].getElementsByClassName("card-tabs")[0];
+                if (!tabs) continue;
+                var top = tabs.offsetHeight, el = tabs;
+                while (el) { top += el.offsetTop; el = el.offsetParent; }
+                var h = window.innerHeight - top - 46;   // card bottom padding + the body's bottom padding
+                if (h < 240) h = 240;   // portrait/wrapped rows still show a few chores
+                var panes = cards[i].getElementsByClassName("pane");
+                for (var j = 0; j < panes.length; j++) panes[j].style.maxHeight = h + "px";
+            }
         }
 
         function loadScores() {
@@ -880,21 +1067,37 @@
                 .replace(/&/g, "&amp;").replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         }
+        // The strip collapses to a single header line so a busy day doesn't
+        // push the chore cards off screen. Tap the header to toggle.
+        var CAL = null;
+        var CAL_OPEN = true;
+        function toggleCalendar() {
+            CAL_OPEN = !CAL_OPEN;
+            renderCalendar(CAL);
+        }
         function renderCalendar(data) {
             var panel = document.getElementById("calendar-panel");
             if (!panel) return;
             var evs = (data && data.events) ? data.events : [];
-            var html = "<h2>Today</h2>";
-            if (!evs.length) {
-                html += '<div class="cal-none">Nothing on the calendar today</div>';
-            } else {
-                for (var i = 0; i < evs.length; i++) {
-                    html +=
-                        '<div class="cal-event">' +
-                            '<span class="cal-time">' + escHtml(evs[i].time) + '</span>' +
-                            '<span class="cal-title">' + escHtml(evs[i].title) + '</span>' +
-                        '</div>';
+            var html =
+                '<div class="cal-head" onclick="toggleCalendar()">' +
+                    '<h2>Today' + (evs.length ? ' <span class="cal-count">' + evs.length + '</span>' : '') + '</h2>' +
+                    '<span class="cal-toggle">' + (CAL_OPEN ? "Hide" : "Show") + '</span>' +
+                '</div>';
+            if (CAL_OPEN) {
+                html += '<div class="cal-body">';
+                if (!evs.length) {
+                    html += '<div class="cal-none">Nothing on the calendar today</div>';
+                } else {
+                    for (var i = 0; i < evs.length; i++) {
+                        html +=
+                            '<div class="cal-event">' +
+                                '<span class="cal-time">' + escHtml(evs[i].time) + '</span>' +
+                                '<span class="cal-title">' + escHtml(evs[i].title) + '</span>' +
+                            '</div>';
+                    }
                 }
+                html += '</div>';
             }
             panel.innerHTML = html;
         }
@@ -921,7 +1124,7 @@
         }
 
         // --- Screen saver (weather + schedule, fades in after 5 min idle) -----
-        var WEATHER = null, CAL = null, idleTimer = null, ssVisible = false;
+        var WEATHER = null, idleTimer = null, ssVisible = false;
         var SS_IDLE_MS = 5 * 60 * 1000;
 
         function loadWeather() {
@@ -1005,7 +1208,7 @@
             idleTimer = setTimeout(showScreensaver, SS_IDLE_MS);
         }
 
-        document.getElementById("last-updated").textContent = "Loading (v21)…";
+        document.getElementById("last-updated").textContent = "Loading (v22)…";
         loadScores();
         loadCalendar();
         loadWeather();
@@ -1020,6 +1223,8 @@
             document.addEventListener(_ssEvents[_i], resetIdle, true);
         }
         resetIdle();
+        window.onresize = sizePanes;
+        window.onorientationchange = sizePanes;
     </script>
 </body>
 </html>

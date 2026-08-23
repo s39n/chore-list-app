@@ -45,6 +45,67 @@
         .day-lbl { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; }
         label { font-size: 0.9rem; }
         .ce-rotate, .ce-days { display: inline-flex; align-items: center; flex-wrap: wrap; }
+
+        /* Tab bar. The portal used to stack every section on one page; each
+           section now lives on its own tab so no screen is an endless scroll. */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin: 14px 0 18px;
+            border-bottom: 2px solid #e3e6ec;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: #f4f5f7;
+            padding-top: 8px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+        }
+        .tab {
+            background: none;
+            color: #6b7280;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            white-space: nowrap;
+        }
+        .tab.active { color: #2d6cdf; border-bottom-color: #2d6cdf; background: #fff; }
+        .tabpanel > h2:first-child { margin-top: 4px; }
+
+        /* Chore rows collapse to one line so a long chore list stays scannable;
+           the full editor is still in the DOM (just hidden) so saving picks up
+           edits on collapsed rows too. */
+        .ce-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .ce-caret { color: #9aa2b1; font-size: 0.8rem; width: 12px; flex-shrink: 0; }
+        .ce-name { font-weight: 700; font-size: 0.98rem; flex-shrink: 0; }
+        .ce-meta {
+            color: #8a919e;
+            font-size: 0.8rem;
+            flex: 1;
+            text-align: right;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chore-edit { padding: 12px 16px; margin-bottom: 8px; }
+        .chore-edit .ce-body { display: none; margin-top: 12px; }
+        .chore-edit.open .ce-body { display: block; }
+        .chore-edit.open .ce-meta { display: none; }
+        .chore-edit.hit { display: none; }
+        .ce-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+        .ce-toolbar input[type=text] { flex: 1; min-width: 140px; }
+        .ce-toolbar button { font-size: 0.78rem; padding: 6px 10px; }
     </style>
 </head>
 <body>
@@ -62,11 +123,21 @@
             <button class="secondary" onclick="refreshData()" style="padding:6px 12px;font-size:0.8rem;">Refresh</button>
         </div>
 
+        <div class="tabs">
+            <button class="tab active" id="tab-points"  onclick="showTab('points')">Points</button>
+            <button class="tab"        id="tab-history" onclick="showTab('history')">History</button>
+            <button class="tab"        id="tab-people"  onclick="showTab('people')">People</button>
+            <button class="tab"        id="tab-chores"  onclick="showTab('chores')">Chores</button>
+        </div>
+
+        <div class="tabpanel" id="panel-points">
         <h2>Points</h2>
         <div class="sub">Unbanked = earned, not yet approved. Approve moves it to Banked; Redeem spends from Banked.</div>
         <div id="points"></div>
         <div style="margin:2px 0 8px;"><button class="secondary" onclick="resetAllPoints()" style="font-size:0.78rem;padding:5px 10px;">Reset all points…</button></div>
+        </div>
 
+        <div class="tabpanel" id="panel-history" style="display:none;">
         <h2>Completed tasks</h2>
         <div class="card">
             <div class="cal-head">
@@ -84,7 +155,9 @@
         <h2>Adjustments</h2>
         <div class="sub">Manual bonuses and discipline penalties. Delete to reverse one.</div>
         <div id="adjust-history"></div>
+        </div>
 
+        <div class="tabpanel" id="panel-people" style="display:none;">
         <h2>Manage people</h2>
         <div class="sub">Add a child, rename, pick a color, or remove someone. Renaming updates their chores automatically. Saving updates the board for everyone.</div>
         <div id="people-editor"></div>
@@ -94,9 +167,17 @@
             <span id="people-saved" class="approved" style="display:none;">Saved ✓</span>
             <div id="people-err" class="err"></div>
         </div>
+        </div>
 
+        <div class="tabpanel" id="panel-chores" style="display:none;">
         <h2>Manage chores</h2>
-        <div class="sub">Add, edit, or remove chores. Saving updates the board and this page for everyone.</div>
+        <div class="sub">Add, edit, or remove chores. Tap a row to open it. Saving updates the board and this page for everyone.</div>
+        <div class="ce-toolbar">
+            <input type="text" id="chore-filter" placeholder="Filter chores…" oninput="filterChores()">
+            <button class="secondary" onclick="expandAllChores(true)">Expand all</button>
+            <button class="secondary" onclick="expandAllChores(false)">Collapse all</button>
+            <span id="chore-count" class="muted"></span>
+        </div>
         <div id="chore-editor"></div>
         <div style="margin:10px 0 28px;">
             <button class="secondary" onclick="addChore()">+ Add chore</button>
@@ -104,6 +185,7 @@
             <button class="secondary" onclick="resetChores()" style="font-size:0.8rem;">Reset to defaults</button>
             <span id="chores-saved" class="approved" style="display:none;">Saved ✓</span>
             <div id="chores-err" class="err"></div>
+        </div>
         </div>
     </div>
 
@@ -133,6 +215,29 @@
         function banked(id){ return (store.balances && store.balances[String(id)]) || 0; }
         function unbanked(id){ return totalEarned(id) + totalAdjust(id) - banked(id) - totalRedeemed(id); }
 
+        // ---- Tabs ----
+        // Panels are hidden with display:none rather than torn down, so an
+        // unsaved chore or person edit survives a trip to another tab.
+        var TABS = ["points", "history", "people", "chores"];
+        function showTab(name) {
+            if (TABS.indexOf(name) < 0) name = "points";
+            for (var i = 0; i < TABS.length; i++) {
+                var on = (TABS[i] === name);
+                var panel = document.getElementById("panel-" + TABS[i]);
+                var tab = document.getElementById("tab-" + TABS[i]);
+                if (panel) panel.style.display = on ? "" : "none";
+                if (tab) tab.className = on ? "tab active" : "tab";
+            }
+            try { localStorage.setItem("adminTab", name); } catch (e) {}
+            window.scrollTo(0, 0);
+        }
+        // Come back to the tab you were last on instead of always Points.
+        function restoreTab() {
+            var saved = null;
+            try { saved = localStorage.getItem("adminTab"); } catch (e) {}
+            showTab(saved || "points");
+        }
+
         function unlock() {
             PIN = document.getElementById("pin").value;
             if (!PIN) { document.getElementById("gate-err").textContent = "Enter a PIN"; return; }
@@ -146,6 +251,7 @@
                 if (r.status === 401) { document.getElementById("gate-err").textContent = "Wrong PIN"; return; }
                 document.getElementById("gate").style.display = "none";
                 document.getElementById("app").style.display = "block";
+                restoreTab();
                 render();
                 startAutoRefresh();
             }).catch(function () {
@@ -512,10 +618,16 @@
                      + (CONFIG.kids||[]).map(function(k){ var v="kid:"+k.name; return '<option value="'+esc(v)+'"'+(assignVal===v?" selected":"")+'>Just '+esc(k.name)+'</option>'; }).join("");
             var pts = (typeof c.points==="number") ? c.points : (CONFIG.defaultPoints||10);
             return '<div class="card chore-edit" data-id="'+esc(c.id||"")+'">'
+                + '<div class="ce-head" onclick="toggleChore(this)">'
+                +   '<span class="ce-caret">▸</span>'
+                +   '<span class="ce-name">'+esc(c.title||"New chore")+'</span>'
+                +   '<span class="ce-meta">'+esc(choreMeta(c))+'</span>'
+                + '</div>'
+                + '<div class="ce-body">'
                 + '<div class="row">'
                 +   '<input type="text" class="ce-title" placeholder="Chore name" value="'+esc(c.title||"")+'" style="flex:1;min-width:160px">'
                 +   '<input type="number" class="ce-points" min="0" title="points" value="'+pts+'" style="width:74px">'
-                +   '<button class="secondary" onclick="this.closest(\'.chore-edit\').remove()">Delete</button>'
+                +   '<button class="secondary" onclick="this.closest(\'.chore-edit\').remove(); choreCount();">Delete</button>'
                 + '</div>'
                 + '<div class="row" style="margin-top:8px;">'
                 +   '<label>Days: <select class="ce-freq" onchange="toggleDays(this)"><option value="daily"'+(isDaily?" selected":"")+'>Every day</option><option value="some"'+(!isDaily?" selected":"")+'>Specific days</option></select></label>'
@@ -525,16 +637,91 @@
                 +   '<label>Who: <select class="ce-assign" onchange="toggleRotate(this)">'+opts+'</select></label>'
                 +   '<span class="ce-rotate" style="'+(assignVal==="rotate"?"":"display:none;")+'">'+kidBoxes(c.rotate)+' <label class="day-lbl">start <input type="number" class="ce-offset" value="'+(c.offset||0)+'" style="width:46px"></label></span>'
                 + '</div>'
+                + '</div>'
                 + '</div>';
+        }
+
+        // One-line summary shown on a collapsed chore row: who · when · points.
+        function choreMeta(c){
+            c = c || {};
+            var who = c.rotate ? ("Rotate: " + c.rotate.join(", "))
+                    : ((!c.who || c.who === "all") ? "Everyone" : c.who);
+            var when = (!c.days || c.days === "daily") ? "Every day"
+                     : (Array.isArray(c.days) && c.days.length
+                        ? c.days.map(function(d){ return String(d).charAt(0).toUpperCase()+String(d).slice(1); }).join(", ")
+                        : "No days");
+            return who + " · " + when + " · " + chorePts(c) + " pts";
+        }
+        // The same summary, rebuilt from a row's inputs after it has been edited.
+        function choreMetaFromDom(div){
+            var c = {};
+            if (div.querySelector(".ce-freq").value === "some") {
+                var ds = [];
+                div.querySelectorAll(".ce-days input[data-day]").forEach(function(cb){ if (cb.checked) ds.push(cb.getAttribute("data-day")); });
+                c.days = ds;
+            } else { c.days = "daily"; }
+            var a = div.querySelector(".ce-assign").value;
+            if (a === "rotate") {
+                c.rotate = [];
+                div.querySelectorAll(".ce-rotate input[data-kid]").forEach(function(cb){ if (cb.checked) c.rotate.push(cb.getAttribute("data-kid")); });
+            } else if (a.indexOf("kid:") === 0) { c.who = a.slice(4); }
+            else { c.who = "all"; }
+            c.points = Number(div.querySelector(".ce-points").value) || 0;
+            return c;
+        }
+        function isOpenRow(div){ return div.className.indexOf(" open") >= 0; }
+        function toggleChore(head){
+            var div = head.closest(".chore-edit");
+            var opening = !isOpenRow(div);
+            div.className = div.className.split(" open").join("") + (opening ? " open" : "");
+            if (!opening) {
+                // Collapsing: refresh the summary so it reflects the edits made.
+                div.querySelector(".ce-name").textContent = div.querySelector(".ce-title").value || "New chore";
+                div.querySelector(".ce-meta").textContent = choreMeta(choreMetaFromDom(div));
+            }
+        }
+        function expandAllChores(open){
+            document.querySelectorAll(".chore-edit").forEach(function(div){
+                if (isOpenRow(div) !== open) toggleChore(div.querySelector(".ce-head"));
+            });
+        }
+        // Hide rows that do not match the filter box. Hidden rows stay in the
+        // DOM, so Save still writes them out unchanged.
+        function filterChores(){
+            var q = (document.getElementById("chore-filter").value || "").toLowerCase();
+            document.querySelectorAll(".chore-edit").forEach(function(div){
+                var hay = (div.querySelector(".ce-title").value + " " +
+                           div.querySelector(".ce-meta").textContent).toLowerCase();
+                var hit = !q || hay.indexOf(q) >= 0;
+                div.className = div.className.split(" hit").join("") + (hit ? "" : " hit");
+            });
+            choreCount();
+        }
+        function choreCount(){
+            var all = document.querySelectorAll(".chore-edit").length;
+            var shown = document.querySelectorAll(".chore-edit:not(.hit)").length;
+            document.getElementById("chore-count").textContent =
+                (shown === all) ? (all + " chores") : (shown + " of " + all);
         }
         function toggleDays(sel){ sel.closest(".chore-edit").querySelector(".ce-days").style.display = sel.value==="some" ? "" : "none"; }
         function toggleRotate(sel){ sel.closest(".chore-edit").querySelector(".ce-rotate").style.display = sel.value==="rotate" ? "" : "none"; }
         function renderChores(){
             var box = document.getElementById("chore-editor");
             if (!box) return;
-            box.innerHTML = (CONFIG.chores||[]).map(choreCard).join("");
+            box.innerHTML = (CONFIG.chores||[]).map(function(c){ return choreCard(c); }).join("");
+            filterChores();   // re-applies any active filter and updates the count
         }
-        function addChore(){ document.getElementById("chore-editor").insertAdjacentHTML("beforeend", choreCard(null)); }
+        // A brand-new chore opens straight into the editor — there is nothing
+        // to summarise yet.
+        function addChore(){
+            var box = document.getElementById("chore-editor");
+            box.insertAdjacentHTML("beforeend", choreCard(null));
+            var row = box.lastElementChild;
+            row.className = row.className + " open";
+            choreCount();
+            row.scrollIntoView({ block: "center" });
+            row.querySelector(".ce-title").focus();
+        }
         function collectChores(){
             var used = {}, out = [];
             document.querySelectorAll(".chore-edit").forEach(function(div){
