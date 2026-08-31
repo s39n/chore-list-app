@@ -1,4 +1,5 @@
 # Chore List
+<img width="1229" height="750" alt="image" src="https://github.com/user-attachments/assets/1c071701-e5d7-41cb-b8df-40609f0da922" />
 
 A family chore management system with a web interface and tablet-optimized scoreboard.
 
