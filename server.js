@@ -205,7 +205,7 @@ function parseICS(text) {
                 const K = kv.slice(0, eq).toUpperCase(), V = kv.slice(eq + 1);
                 if (K === "FREQ") r.freq = V.toUpperCase();
                 else if (K === "INTERVAL") r.interval = parseInt(V, 10) || 1;
-                else if (K === "BYDAY") r.byday = V.split(",").map((x) => BYDAY_NUM[x.slice(-2).toUpperCase()]).filter((n) => n != null);
+                else if (K === "BYDAY") r.byday = V.split(",").map((x) => { const mm = /^([+-]?\d+)?(SU|MO|TU|WE|TH|FR|SA)$/i.exec(x.trim()); return mm ? { n: mm[1] ? parseInt(mm[1], 10) : null, d: BYDAY_NUM[mm[2].toUpperCase()] } : null; }).filter((e) => e);
                 else if (K === "BYMONTHDAY") r.bymonthday = parseInt(V, 10);
                 else if (K === "UNTIL") { const u = /^(\d{4})(\d{2})(\d{2})/.exec(V); if (u) r.until = { y: +u[1], m: +u[2], d: +u[3] }; }
                 else if (K === "COUNT") { const n = parseInt(V, 10); if (n > 0) r.count = n; }
@@ -223,7 +223,7 @@ function expandCount(r, s0) {
     if (r.freq === "DAILY") {
         for (let k = 0; k < count; k++) out.push(ymdFromUTC(ymdUTC(s0) + k * iv * 86400000));
     } else if (r.freq === "WEEKLY") {
-        const byday = (r.byday && r.byday.length) ? r.byday.slice().sort((a, b) => a - b) : [dowOf(s0)];
+        const byday = (r.byday && r.byday.length) ? r.byday.map((b) => b.d).sort((a, b) => a - b) : [dowOf(s0)];
         const weekStartUTC = ymdUTC(s0) - dowOf(s0) * 86400000;   // back to Sunday
         let produced = 0;
         for (let w = 0; produced < count && w < count * 7 + 371; w += iv) {
@@ -258,15 +258,30 @@ function occursOn(ev, today) {
     const iv = r.interval || 1;
     if (r.freq === "DAILY") return daysBetween(s0, today) % iv === 0;
     if (r.freq === "WEEKLY") {
-        const days = (r.byday && r.byday.length) ? r.byday : [dowOf(s0)];
+        const days = (r.byday && r.byday.length) ? r.byday.map((b) => b.d) : [dowOf(s0)];
         if (days.indexOf(dowOf(today)) < 0) return false;
         return Math.floor(daysBetween(s0, today) / 7) % iv === 0;
     }
     if (r.freq === "MONTHLY") {
-        const day = (r.bymonthday != null) ? r.bymonthday : s0.d;
-        if (today.d !== day) return false;
         const months = (today.y - s0.y) * 12 + (today.m - s0.m);
-        return months >= 0 && months % iv === 0;
+        if (months < 0 || months % iv !== 0) return false;
+        // BYDAY (e.g. 1SA = first Saturday, -1SU = last Sunday). Fall back to
+        // day-of-month only when the rule has no weekday component.
+        if (r.byday && r.byday.length) {
+            for (const b of r.byday) {
+                if (dowOf(today) !== b.d) continue;
+                if (b.n == null) return true;                  // every <weekday> that month
+                const occ = Math.floor((today.d - 1) / 7) + 1;  // today is the Nth <weekday>
+                if (b.n > 0 && occ === b.n) return true;
+                if (b.n < 0) {
+                    const dim = new Date(Date.UTC(today.y, today.m, 0)).getUTCDate();
+                    if (Math.floor((dim - today.d) / 7) + 1 === -b.n) return true;
+                }
+            }
+            return false;
+        }
+        const day = (r.bymonthday != null) ? r.bymonthday : s0.d;
+        return today.d === day;
     }
     if (r.freq === "YEARLY") {
         if (today.m !== s0.m || today.d !== s0.d) return false;
@@ -625,7 +640,18 @@ http.createServer((req, res) => {
             // plus anything dated this month/day in any year (to catch the culprit).
             const matched = events.filter((e) => e.matchedToday);
             const sameMonthDay = events.filter((e) => e.start && e.start.m === today.m && e.start.d === today.d);
-            sendJson(res, 200, { today, matchedCount: matched.length, matched, sameMonthDay, totalEvents: events.length });
+            const want = {};
+            matched.concat(sameMonthDay).forEach((e) => { want[e.summary] = true; });
+            const rawVevents = [];
+            let block = null, keep = false;
+            for (const line of unfoldICS(text)) {
+                if (line === "BEGIN:VEVENT") { block = []; keep = false; continue; }
+                if (line === "END:VEVENT") { if (block && keep) rawVevents.push(block); block = null; continue; }
+                if (!block) continue;
+                if (/^SUMMARY[:;]/i.test(line) && want[line.slice(line.indexOf(":") + 1)]) keep = true;
+                if (/^(SUMMARY|DTSTART|DTEND|RRULE|RDATE|EXDATE|RECURRENCE-ID|UID)[:;]/i.test(line)) block.push(line);
+            }
+            sendJson(res, 200, { today, matchedCount: matched.length, matched, sameMonthDay, rawVevents, totalEvents: events.length });
         }).catch((e) => sendJson(res, 200, { error: String(e && e.message || e) }));
         return;
     }
