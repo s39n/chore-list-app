@@ -199,7 +199,7 @@ function parseICS(text) {
         else if (name === "RECURRENCE-ID") cur.recurrenceId = parseDT(params, value);
         else if (name === "EXDATE") value.split(",").forEach((v) => { const p = parseDT(params, v.trim()); if (p) cur.exdates.push(p.local); });
         else if (name === "RRULE") {
-            const r = { interval: 1, byday: null, until: null, bymonthday: null };
+            const r = { interval: 1, byday: null, until: null, bymonthday: null, count: null };
             value.split(";").forEach((kv) => {
                 const eq = kv.indexOf("="); if (eq < 0) return;
                 const K = kv.slice(0, eq).toUpperCase(), V = kv.slice(eq + 1);
@@ -208,11 +208,44 @@ function parseICS(text) {
                 else if (K === "BYDAY") r.byday = V.split(",").map((x) => BYDAY_NUM[x.slice(-2).toUpperCase()]).filter((n) => n != null);
                 else if (K === "BYMONTHDAY") r.bymonthday = parseInt(V, 10);
                 else if (K === "UNTIL") { const u = /^(\d{4})(\d{2})(\d{2})/.exec(V); if (u) r.until = { y: +u[1], m: +u[2], d: +u[3] }; }
+                else if (K === "COUNT") { const n = parseInt(V, 10); if (n > 0) r.count = n; }
             });
             cur.rrule = r;
         }
     }
     return events;
+}
+function ymdFromUTC(ms) { const d = new Date(ms); return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() }; }
+// Enumerate the first r.count occurrence dates of a bounded (COUNT) recurrence,
+// so a series that has already run its course stops matching.
+function expandCount(r, s0) {
+    const out = [], iv = r.interval || 1, count = Math.min(r.count, 2000);
+    if (r.freq === "DAILY") {
+        for (let k = 0; k < count; k++) out.push(ymdFromUTC(ymdUTC(s0) + k * iv * 86400000));
+    } else if (r.freq === "WEEKLY") {
+        const byday = (r.byday && r.byday.length) ? r.byday.slice().sort((a, b) => a - b) : [dowOf(s0)];
+        const weekStartUTC = ymdUTC(s0) - dowOf(s0) * 86400000;   // back to Sunday
+        let produced = 0;
+        for (let w = 0; produced < count && w < count * 7 + 371; w += iv) {
+            for (const d of byday) {
+                const occUTC = weekStartUTC + (w * 7 + d) * 86400000;
+                if (occUTC < ymdUTC(s0)) continue;
+                out.push(ymdFromUTC(occUTC));
+                if (++produced >= count) break;
+            }
+        }
+    } else if (r.freq === "MONTHLY") {
+        const day = (r.bymonthday != null) ? r.bymonthday : s0.d;
+        for (let k = 0; k < count; k++) { const m0 = (s0.m - 1) + k * iv; out.push({ y: s0.y + Math.floor(m0 / 12), m: (m0 % 12) + 1, d: day }); }
+    } else if (r.freq === "YEARLY") {
+        for (let k = 0; k < count; k++) out.push({ y: s0.y + k * iv, m: s0.m, d: s0.d });
+    }
+    return out;
+}
+function countedOccursOn(r, s0, today) {
+    const keys = expandCount(r, s0);
+    for (const k of keys) if (sameYmd(k, today)) return true;
+    return false;
 }
 function occursOn(ev, today) {
     const s = ev.start.local, s0 = { y: s.y, m: s.m, d: s.d };
@@ -221,6 +254,7 @@ function occursOn(ev, today) {
     const r = ev.rrule;
     if (daysBetween(s0, today) < 0) return false;
     if (r.until && daysBetween(today, r.until) < 0) return false;
+    if (r.count) return countedOccursOn(r, s0, today);
     const iv = r.interval || 1;
     if (r.freq === "DAILY") return daysBetween(s0, today) % iv === 0;
     if (r.freq === "WEEKLY") {
@@ -560,6 +594,39 @@ http.createServer((req, res) => {
         } catch {
             sendJson(res, 200, {});
         }
+        return;
+    }
+
+    // Parent-only diagnostic: fetch the live feed and show how each event parses
+    // and whether it matches today. Use to debug stray/far-future events.
+    // PowerShell:  Invoke-RestMethod http://<host>:<port>/calendar/debug -Headers @{ "x-parent-pin"="<PIN>" } | ConvertTo-Json -Depth 6
+    if (req.url.split("?")[0] === "/calendar/debug") {
+        if (!authorized(req)) { sendJson(res, 401, { error: "bad or missing parent PIN" }); return; }
+        if (!CAL_ICS_URL) { sendJson(res, 200, { error: "no CAL_ICS_URL configured" }); return; }
+        fetch(CAL_ICS_URL).then((r) => r.ok ? r.text() : Promise.reject(new Error("http " + r.status))).then((text) => {
+            const today = ymdOf(new Date());
+            const events = parseICS(text).map((ev) => {
+                let matched = false;
+                try {
+                    if (ev.recurrenceId) matched = sameYmd(ev.recurrenceId.local, today);
+                    else matched = !!(ev.start && ev.status !== "CANCELLED" && occursOn(ev, today));
+                } catch (e) { matched = false; }
+                return {
+                    summary: ev.summary || "",
+                    start: ev.start ? ev.start.local : null,
+                    allDay: ev.start ? ev.start.allDay : null,
+                    rrule: ev.rrule || null,
+                    recurrenceId: ev.recurrenceId ? ev.recurrenceId.local : null,
+                    status: ev.status || null,
+                    matchedToday: matched
+                };
+            });
+            // Lead with whatever matched today (the stuff actually on the board),
+            // plus anything dated this month/day in any year (to catch the culprit).
+            const matched = events.filter((e) => e.matchedToday);
+            const sameMonthDay = events.filter((e) => e.start && e.start.m === today.m && e.start.d === today.d);
+            sendJson(res, 200, { today, matchedCount: matched.length, matched, sameMonthDay, totalEvents: events.length });
+        }).catch((e) => sendJson(res, 200, { error: String(e && e.message || e) }));
         return;
     }
 
